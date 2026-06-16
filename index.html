@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Grist Calendar</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       HEADER
+       Contains: app title, week/month toggle, navigation arrows,
+       "Today" shortcut, and a live status indicator.
+  ════════════════════════════════════════════════════════════════ -->
+  <header>
+    <h1>📅 Available Office</h1>
+
+    <!-- Week / Month view toggle -->
+    <div class="view-toggle">
+      <button id="btn-week" class="active" onclick="setView('week')">Week</button>
+      <button id="btn-month" onclick="setView('month')">Month</button>
+    </div>
+
+    <div class="header-spacer"></div>
+
+    <!-- Period navigation -->
+    <button class="nav-btn" onclick="navigate(-1)">&#8592;</button>
+    <span id="period-label"></span>
+    <button class="nav-btn" onclick="navigate(1)">&#8594;</button>
+    <button id="today-btn" onclick="goToday()">Today</button>
+
+    <!-- Live sync status (updated every 5 s) -->
+    <span class="status" id="status-msg">Loading…</span>
+  </header>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       CALENDAR CONTAINER
+       Filled dynamically by renderWeek() or renderMonth() in app.js.
+  ════════════════════════════════════════════════════════════════ -->
+  <div id="calendar"></div>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       BOOKING MODAL
+       Shown when the user clicks an event.
+       Fields:
+         - Event summary (date, hours, auto-detected period)
+         - "Who are you?" → populated from the People Grist table
+         - "Which spot?" → parsed from calendar_text
+         - "Period" selector → only shown for all-day events,
+            letting the user choose All day / Morning / Afternoon
+  ════════════════════════════════════════════════════════════════ -->
+  <div class="modal-bg" id="modal-bg" onclick="closeModal(event)">
+    <div class="modal">
+
+      <div class="modal-header">
+        <h2 id="modal-title"></h2>
+        <p id="modal-subtitle">Book a spot</p>
+      </div>
+
+      <div class="modal-body">
+
+        <!-- Event summary row -->
+        <div class="modal-info">
+          <div class="modal-info-item">
+            📅 Date
+            <strong id="modal-date"></strong>
+          </div>
+          <div class="modal-info-item">
+            🕐 Hours
+            <strong id="modal-hours"></strong>
+          </div>
+          <div class="modal-info-item">
+            Period
+            <span class="period-badge" id="modal-period"></span>
+          </div>
+        </div>
+
+        <!-- Dropdown: who the user is (from People table) -->
+        <div class="modal-field">
+          <label for="modal-who-i-am">Who are you?</label>
+          <select id="modal-who-i-am">
+            <option value="">— Select —</option>
+          </select>
+        </div>
+
+        <!-- Dropdown: which person's spot to take (parsed from calendar_text) -->
+        <div class="modal-field">
+          <label for="modal-whose-place">Which spot do you want to take?</label>
+          <select id="modal-whose-place">
+            <option value="">— Select —</option>
+          </select>
+        </div>
+
+        <!-- Period selector: only visible for all-day events -->
+        <div class="modal-field" id="modal-period-row" style="display:none">
+          <label for="modal-period-select">Period</label>
+          <select id="modal-period-select">
+            <option value="All day">All day</option>
+            <option value="Morning">Morning</option>
+            <option value="Afternoon">Afternoon</option>
+          </select>
+        </div>
+
+      </div><!-- /.modal-body -->
+
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn-primary" id="modal-confirm-btn" onclick="confirmEvent()">Confirm</button>
+      </div>
+
+    </div><!-- /.modal -->
+  </div><!-- /.modal-bg -->
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       TOAST NOTIFICATION
+       Shown briefly after a successful or failed booking.
+  ════════════════════════════════════════════════════════════════ -->
+  <div class="toast" id="toast"></div>
+
+  <script src="app.js"></script>
+
+</body>
+</html>
