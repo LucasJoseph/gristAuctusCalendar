@@ -10,17 +10,13 @@
 
   <!-- ═══════════════════════════════════════════════════════════════
        HEADER
-       Contains: app title, week/month toggle, navigation arrows,
+       Contains: app title,  navigation arrows,
        "Today" shortcut, and a live status indicator.
   ════════════════════════════════════════════════════════════════ -->
   <header>
     <h1>📅 Available Office</h1>
 
-    <!-- Week / Month view toggle -->
-    <div class="view-toggle">
-      <button id="btn-week" class="active" onclick="setView('week')">Week</button>
-      <button id="btn-month" onclick="setView('month')">Month</button>
-    </div>
+
 
     <div class="header-spacer"></div>
 
@@ -36,7 +32,7 @@
 
   <!-- ═══════════════════════════════════════════════════════════════
        CALENDAR CONTAINER
-       Filled dynamically by renderWeek() or renderMonth() in app.js.
+       Filled dynamically by renderWeek() in app.js.
   ════════════════════════════════════════════════════════════════ -->
   <div id="calendar"></div>
 

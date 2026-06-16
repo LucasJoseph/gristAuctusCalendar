@@ -8,11 +8,9 @@
      4. Calendar container
      5. Week view  —  grid, time column, day columns
      6. Week view  —  events overlay layer
-     7. Month view
-     8. Event chips (month view)
-     9. Event blocks (week view, absolutely positioned)
-    10. Booking modal
-    11. Toast notification
+     7. Event blocks (week view, absolutely positioned)
+     8. Booking modal
+     9. Toast notification
 ═══════════════════════════════════════════════════════════════════ */
 
 
@@ -97,26 +95,7 @@ header h1 {
 /* Pushes nav controls to the right */
 .header-spacer { flex: 1; }
 
-/* Week / Month toggle pill */
-.view-toggle {
-  display: flex;
-  border: 0.5px solid var(--gray-200);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.view-toggle button {
-  background: white;
-  border: none;
-  padding: 7px 16px;
-  font-size: 13px;
-  cursor: pointer;
-  color: var(--gray-600);
-  transition: background 0.15s;
-}
-.view-toggle button.active {
-  background: var(--blue-600);
-  color: white;
-}
+
 
 /* Prev / Next arrow buttons */
 .nav-btn {
@@ -274,83 +253,6 @@ header h1 {
   height: var(--grid-body-height); /* 672px for 06:00–20:00 */
   pointer-events: all;             /* re-enable clicks on events */
 }
-
-
-/* ─────────────────────────────────────────────────────────────────
-   7. MONTH VIEW
-   ───────────────────────────────────────────────────────────────── */
-.month-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  border: 0.5px solid var(--gray-100);
-  border-radius: 10px;
-  overflow: hidden;
-  background: white;
-}
-
-.month-day-header {
-  background: var(--gray-50);
-  border-bottom: 0.5px solid var(--gray-100);
-  padding: 8px 10px;
-  text-align: center;
-  font-size: 12px;
-  color: var(--gray-600);
-}
-
-.month-cell {
-  border-right: 0.5px solid var(--gray-100);
-  border-bottom: 0.5px solid var(--gray-100);
-  min-height: 110px;
-  padding: 6px;
-}
-.month-cell:nth-child(7n)  { border-right: none; }
-.month-cell.other-month    { background: var(--gray-50); }
-.month-cell.today-cell     { background: #fafcff; }
-
-/* Day number badge in the top-left of each cell */
-.month-day-num {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--gray-600);
-  margin-bottom: 4px;
-  display: inline-block;
-  width: 24px;
-  height: 24px;
-  line-height: 24px;
-  text-align: center;
-  border-radius: 50%;
-}
-.month-cell.today-cell .month-day-num {
-  background: var(--blue-600);
-  color: white;
-}
-
-
-/* ─────────────────────────────────────────────────────────────────
-   8. EVENT CHIPS  (month view)
-   Small inline pill for each event inside a month cell.
-   Three colour variants cycle by event index (0 → blue, 1 → purple,
-   2 → teal, then wraps around).
-   ───────────────────────────────────────────────────────────────── */
-.event-chip {
-  border-radius: 4px;
-  padding: 2px 6px;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  margin-bottom: 2px;
-  display: block;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: opacity 0.12s;
-}
-.event-chip:hover { opacity: 0.82; }
-
-.event-chip.color-0 { background: var(--blue-50);   color: var(--blue-800);   border-left: 2px solid var(--blue-600);   }
-.event-chip.color-1 { background: var(--purple-50); color: var(--purple-800); border-left: 2px solid var(--purple-600); }
-.event-chip.color-2 { background: var(--teal-50);   color: var(--teal-800);   border-left: 2px solid var(--teal-600);   }
-
 
 /* ─────────────────────────────────────────────────────────────────
    9. EVENT BLOCKS  (week view, absolutely positioned)

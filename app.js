@@ -2,7 +2,7 @@
  * app.js  —  Grist Calendar
  * ─────────────────────────────────────────────────────────────────
  * Fetches events from a Grist document, renders an interactive
- * week / month calendar, and writes booking records back to Grist
+ * week calendar, and writes booking records back to Grist
  * when the user confirms a spot.
  *
  * Sections:
@@ -13,7 +13,6 @@
  *   5. Text helpers   — parse available names from calendar_text
  *   6. Render entry   — setView, navigate, goToday, render
  *   7. Week view      — renderWeek, overlap layout algorithm
- *   8. Month view     — renderMonth
  *   9. Modal          — openModal, closeModal, confirmEvent
  *  10. Grist API      — fetchPeople, loadEvents
  *  11. UI helpers     — showToast
@@ -76,7 +75,7 @@ const CONFIG = {
    2. STATE
    Runtime variables shared across rendering and modal functions.
 ════════════════════════════════════════════════════════════════ */
-let currentView  = 'week';   // 'week' | 'month'
+let currentView  = 'week'; 
 let currentDate  = new Date();
 let events       = [];       // array of normalised event objects
 let people       = [];       // array of name strings from the People table
@@ -254,17 +253,6 @@ function parseAvailablePlaces(text) {
    6. RENDER ENTRY POINTS
 ════════════════════════════════════════════════════════════════ */
 
-/**
- * Switch between week and month view.
- * Updates the toggle button state and re-renders.
- * @param {'week'|'month'} v
- */
-function setView(v) {
-  currentView = v;
-  document.getElementById('btn-week').classList.toggle('active', v === 'week');
-  document.getElementById('btn-month').classList.toggle('active', v === 'month');
-  render();
-}
 
 /**
  * Move forward (+1) or backward (-1) by one week or one month.
@@ -287,8 +275,7 @@ function goToday() {
 
 /** Dispatch to the appropriate renderer */
 function render() {
-  if (currentView === 'week') renderWeek();
-  else renderMonth();
+  renderWeek();
 }
 
 
@@ -442,67 +429,6 @@ function renderWeek() {
     });
   });
 }
-
-
-/* ═══════════════════════════════════════════════════════════════
-   8. MONTH VIEW
-════════════════════════════════════════════════════════════════ */
-
-function renderMonth() {
-  const y = currentDate.getFullYear();
-  const m = currentDate.getMonth();
-  document.getElementById('period-label').textContent = `${MONTHS_EN[m]} ${y}`;
-
-  // Find the Monday on or before the 1st of the month
-  const firstDay = new Date(y, m, 1);
-  let startDow = firstDay.getDay();
-  if (startDow === 0) startDow = 7;
-  const gridStart = new Date(firstDay.getTime() - (startDow - 1) * 86400000);
-
-  let html = `<div class="month-grid">`;
-
-  // Day-name header row
-  DAYS_EN.forEach(d => {
-    html += `<div class="month-day-header">${d}</div>`;
-  });
-
-  // 6 rows × 7 days = 42 cells
-  for (let i = 0; i < 42; i++) {
-    const d      = new Date(gridStart.getTime() + i * 86400000);
-    const isOther = d.getMonth() !== m;
-    const tod     = isToday(d);
-    const dayEvs  = getEventsForDay(d);
-
-    let cls = 'month-cell';
-    if (isOther) cls += ' other-month';
-    if (tod)     cls += ' today-cell';
-
-    html += `<div class="${cls}">
-      <span class="month-day-num">${d.getDate()}</span>`;
-
-    dayEvs.forEach((ev, idx) => {
-      const st = parseTime(ev._start);
-      const timePrefix = st ? st.str + ' ' : '';
-      html += `<span class="event-chip color-${idx % 3}"
-        data-evid="${ev._id}"
-        title="${ev._text}">${timePrefix}${ev._text || '(no title)'}</span>`;
-    });
-
-    html += `</div>`;
-  }
-
-  html += `</div>`;
-  document.getElementById('calendar').innerHTML = html;
-
-  // Attach click listeners (can't use inline onclick with dynamic data-evid)
-  document.querySelectorAll('.event-chip[data-evid]').forEach(el => {
-    el.addEventListener('click', () => {
-      const ev = events.find(e => String(e._id) === el.dataset.evid);
-      if (ev) openModal(ev);
-    });
-  });
-}
-
 
 /* ═══════════════════════════════════════════════════════════════
    9. MODAL — booking flow
