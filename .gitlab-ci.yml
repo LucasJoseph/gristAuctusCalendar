@@ -10,7 +10,7 @@ pages:
   stage: deploy
   script:
     - mkdir -p public
-    - cp -r * public
+    - cp index.html app.js style.css public
   artifacts:
     paths:
       - public
