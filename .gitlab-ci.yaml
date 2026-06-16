@@ -1,0 +1,13 @@
+# All available Hugo versions are listed here: https://gitlab.com/pages/hugo/container_registry
+default:
+  tags:
+  - ci.inria.fr
+
+pages:
+  script:
+  - mv * public
+  artifacts:
+    paths:
+    - public
+  only:
+      - master
