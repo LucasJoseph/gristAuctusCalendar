@@ -10,13 +10,13 @@
 
   <!-- ═══════════════════════════════════════════════════════════════
        HEADER
-       Contains: app title,  navigation arrows,
+       Contains: app title, navigation arrows,
        "Today" shortcut, and a live status indicator.
   ════════════════════════════════════════════════════════════════ -->
   <header>
     <h1>📅 Available Office</h1>
 
-
+ 
 
     <div class="header-spacer"></div>
 
@@ -32,7 +32,7 @@
 
   <!-- ═══════════════════════════════════════════════════════════════
        CALENDAR CONTAINER
-       Filled dynamically by renderWeek() in app.js.
+       Filled dynamically by renderWeek() 
   ════════════════════════════════════════════════════════════════ -->
   <div id="calendar"></div>
 
@@ -72,12 +72,24 @@
           </div>
         </div>
 
-        <!-- Dropdown: who the user is (from People table) -->
+        <!-- Autocomplete: who the user is (from People table)
+             The hidden input holds the confirmed value sent to Grist.
+             The visible text input filters the suggestion list as you type. -->
         <div class="modal-field">
-          <label for="modal-who-i-am">Who are you?</label>
-          <select id="modal-who-i-am">
-            <option value="">— Select —</option>
-          </select>
+          <label for="who-input">Who are you?</label>
+          <div class="autocomplete-wrapper" id="who-autocomplete">
+            <input
+              type="text"
+              id="who-input"
+              class="autocomplete-input"
+              placeholder="Type a name…"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <ul class="autocomplete-list" id="who-list" role="listbox"></ul>
+          </div>
+          <!-- Hidden field: holds the validated selected value -->
+          <input type="hidden" id="modal-who-i-am" />
         </div>
 
         <!-- Dropdown: which person's spot to take (parsed from calendar_text) -->

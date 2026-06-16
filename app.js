@@ -250,7 +250,7 @@ function parseAvailablePlaces(text) {
 
 
 /* ═══════════════════════════════════════════════════════════════
-   6. RENDER ENTRY POINTS
+   6. NAVIGATION & RENDER
 ════════════════════════════════════════════════════════════════ */
 
 
@@ -258,22 +258,22 @@ function parseAvailablePlaces(text) {
  * Move forward (+1) or backward (-1) by one week or one month.
  * @param {1|-1} dir
  */
+/**
+ * Move forward (+1) or backward (-1) by one week.
+ * @param {1|-1} dir
+ */
 function navigate(dir) {
-  if (currentView === 'week') {
-    currentDate = new Date(currentDate.getTime() + dir * 7 * 86400000);
-  } else {
-    currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + dir, 1);
-  }
+  currentDate = new Date(currentDate.getTime() + dir * 7 * 86400000);
   render();
 }
 
-/** Jump to the current week / month */
+/** Jump to the current week */
 function goToday() {
   currentDate = new Date();
   render();
 }
 
-/** Dispatch to the appropriate renderer */
+/** Render the calendar */
 function render() {
   renderWeek();
 }
@@ -431,6 +431,154 @@ function renderWeek() {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   8b. AUTOCOMPLETE — "Who are you?" field
+   ─────────────────────────────────────────────────────────────
+   Replaces the native <select> with a text input + floating list.
+   Features:
+     • Filters on every keystroke, matching anywhere in the name
+       (so "ar" matches "Marie", "Martin", "Bernard" etc.)
+     • Highlights the matched portion in the suggestion
+     • Keyboard navigation: ↑↓ to move, Enter to confirm, Escape to close
+     • Clicking outside closes the list
+     • Confirms selection into the hidden #modal-who-i-am input
+════════════════════════════════════════════════════════════════ */
+
+/**
+ * Initialise (or reset) the autocomplete widget.
+ * Called each time the modal opens so it starts clean.
+ */
+function initWhoAutocomplete() {
+  const input     = document.getElementById('who-input');
+  const list      = document.getElementById('who-list');
+  const hiddenVal = document.getElementById('modal-who-i-am');
+
+  // Clear previous state
+  input.value = '';
+  input.classList.remove('confirmed');
+  hiddenVal.value = '';
+  list.innerHTML  = '';
+  list.classList.remove('open');
+
+  let activeIdx = -1; // keyboard-highlighted index
+
+  /**
+   * Render the suggestion list for a given query string.
+   * Matches anywhere in the name (case-insensitive).
+   * @param {string} query
+   */
+  function showSuggestions(query) {
+    list.innerHTML = '';
+    activeIdx = -1;
+
+    const q = query.trim().toLowerCase();
+    // Show all names when input is empty, filtered list otherwise
+    const matches = q === ''
+      ? people
+      : people.filter(p => p.toLowerCase().includes(q));
+
+    if (matches.length === 0) {
+      list.classList.remove('open');
+      return;
+    }
+
+    matches.forEach(name => {
+      const li = document.createElement('li');
+      li.setAttribute('role', 'option');
+
+      // Highlight the matched portion in bold blue
+      if (q) {
+        const matchStart = name.toLowerCase().indexOf(q);
+        const before  = name.slice(0, matchStart);
+        const matched = name.slice(matchStart, matchStart + q.length);
+        const after   = name.slice(matchStart + q.length);
+        li.innerHTML  = `${before}<mark>${matched}</mark>${after}`;
+      } else {
+        li.textContent = name;
+      }
+
+      li.addEventListener('mousedown', e => {
+        // mousedown fires before the input blur — preventDefault keeps list open
+        e.preventDefault();
+        confirmSelection(name);
+      });
+      list.appendChild(li);
+    });
+
+    list.classList.add('open');
+  }
+
+  /**
+   * Confirm a name as the selected value.
+   * Updates the visible input, the hidden value, and closes the list.
+   * @param {string} name
+   */
+  function confirmSelection(name) {
+    input.value     = name;
+    hiddenVal.value = name;
+    input.classList.add('confirmed');
+    list.classList.remove('open');
+    list.innerHTML  = '';
+    activeIdx       = -1;
+  }
+
+  // ── Event listeners ───────────────────────────────────────────
+
+  // Filter list on every keystroke
+  input.addEventListener('input', () => {
+    input.classList.remove('confirmed');
+    hiddenVal.value = '';
+    showSuggestions(input.value);
+  });
+
+  // Show full list when the field is focused (even if empty)
+  input.addEventListener('focus', () => {
+    showSuggestions(input.value);
+  });
+
+  // Close list when focus leaves the widget entirely
+  input.addEventListener('blur', () => {
+    // Delay so mousedown on a list item fires first
+    setTimeout(() => {
+      list.classList.remove('open');
+      // If the typed text exactly matches a name, auto-confirm it
+      const exact = people.find(
+        p => p.toLowerCase() === input.value.trim().toLowerCase()
+      );
+      if (exact) confirmSelection(exact);
+    }, 150);
+  });
+
+  // Keyboard navigation: ↑ ↓ Enter Escape
+  input.addEventListener('keydown', e => {
+    const items = list.querySelectorAll('li');
+    if (!list.classList.contains('open') || items.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeIdx = Math.min(activeIdx + 1, items.length - 1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIdx = Math.max(activeIdx - 1, 0);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (activeIdx >= 0) confirmSelection(items[activeIdx].textContent);
+      return;
+    } else if (e.key === 'Escape') {
+      list.classList.remove('open');
+      activeIdx = -1;
+      return;
+    }
+
+    // Update the visual highlight
+    items.forEach((li, i) => li.classList.toggle('active', i === activeIdx));
+    if (activeIdx >= 0) items[activeIdx].scrollIntoView({ block: 'nearest' });
+  });
+
+  // Auto-focus disabled — user clicks the field manually when ready.
+}
+
+
+/* ═══════════════════════════════════════════════════════════════
    9. MODAL — booking flow
    ─────────────────────────────────────────────────────────────
    openModal(ev)   — populate and show the modal for a given event
@@ -463,15 +611,8 @@ function openModal(ev) {
     : '—';
   document.getElementById('modal-period').textContent = period;
 
-  // "Who are you?" — names from the People table
-  const whoSelect = document.getElementById('modal-who-i-am');
-  whoSelect.innerHTML = '<option value="">— Select —</option>';
-  people.forEach(p => {
-    const opt = document.createElement('option');
-    opt.value = p;
-    opt.textContent = p;
-    whoSelect.appendChild(opt);
-  });
+  // "Who are you?" — reset and init the autocomplete widget
+  initWhoAutocomplete();
 
   // "Which spot?" — names parsed from calendar_text
   const places      = parseAvailablePlaces(ev._text);
@@ -519,7 +660,7 @@ function closeModal(e) {
 async function confirmEvent() {
   if (!selectedEvent) return;
 
-  const whoIAm    = document.getElementById('modal-who-i-am').value;
+  const whoIAm    = document.getElementById('modal-who-i-am').value.trim();
   const whosePlace = document.getElementById('modal-whose-place').value;
 
   if (!whoIAm)     { showToast('Please select who you are', 'error'); return; }
@@ -558,8 +699,6 @@ async function confirmEvent() {
     showToast('Spot booked!', 'success');
     document.getElementById('modal-bg').classList.remove('open');
     selectedEvent = null;
-
-    // Immediately refresh so the calendar reflects the new booking
     await loadEvents(true);
 
   } catch (err) {
