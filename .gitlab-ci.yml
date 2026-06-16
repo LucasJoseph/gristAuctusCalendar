@@ -2,6 +2,9 @@
 default:
   tags:
   - ci.inria.fr 
+image:
+  name: image: ruby:2.6
+  entrypoint: [""]
 
 pages:
   stage: deploy
