@@ -4,10 +4,12 @@ default:
   - ci.inria.fr 
 
 pages:
+  stage: deploy
   script:
-  - mv * public
+    - mkdir -p public
+    - cp -r * public
   artifacts:
     paths:
-    - public
+      - public
   only:
       - master
