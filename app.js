@@ -70,9 +70,10 @@ const CONFIG = {
 ════════════════════════════════════════════════════════════════ */
 let currentView   = 'week';
 let currentDate   = new Date();
-let events        = [];   // normalised event objects (from Calendar table)
-let people        = [];   // name strings (from People table)
-let selectedEvent = null; // event currently shown in the modal
+let events          = [];  // normalised event objects (from Calendar table)
+let people          = [];  // { id, name } objects from People table
+let availablePeople = [];  // { id, name } objects from Setting_available_place
+let selectedEvent   = null; // event currently shown in the modal
 
 
 /* ═══════════════════════════════════════════════════════════════
