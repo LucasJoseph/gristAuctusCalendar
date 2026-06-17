@@ -706,6 +706,7 @@ async function confirmEvent() {
     showToast('Spot booked!', 'success');
     document.getElementById('modal-bg').classList.remove('open');
     selectedEvent = null;
+    await loadData(true);
 
   } catch (err) {
     console.error('confirmEvent error:', err);
