@@ -720,74 +720,63 @@ async function confirmEvent() {
 ════════════════════════════════════════════════════════════════ */
 
 /**
- * Normalise a raw Grist records object (columnar format) into the
- * array of event objects the rest of the app expects.
- *
- * Grist onRecords delivers data in columnar format:
- *   { id: [1,2,3], fields: { date: [...], calendar_text: [...], ... } }
- * We transpose that into row objects.
- *
+ * Normalise a raw Grist columnar table object into the array of
+ * event objects the rest of the app expects.
+ * fetchTable() always returns columnar format:
+ *   { id: [1,2,3], date: [...], calendar_text: [...], ... }
  * @param {object} data  Raw Grist table data
  * @returns {Array}      Normalised event array
  */
 function normaliseRecords(data) {
-  /**
-   * Grist onRecords() can deliver data in two formats depending on
-   * whether column mapping is used:
-   *
-   * A) With column mapping (columns declared in grist.ready):
-   *    An array of row objects with mapped names as keys:
-   *    [ { id: 1, date: '...', calendar_text: '...', start: ..., end: ... }, ... ]
-   *
-   * B) Without column mapping (or fetchTable):
-   *    A columnar object:
-   *    { id: [1,2,...], date: [...], calendar_text: [...], ... }
-   *
-   * We detect which format we received and normalise to row objects.
-   */
-  let rows;
-
-  if (Array.isArray(data)) {
-    // Format A — already an array of row objects
-    rows = data;
-  } else {
-    // Format B — columnar object, transpose to row array
-    const ids = data.id || [];
-    rows = ids.map((id, i) => {
-      const row = { id };
-      for (const key of Object.keys(data)) {
-        if (key !== 'id') row[key] = data[key][i];
-      }
-      return row;
-    });
-  }
-
-  return rows.map(row => ({
-    _id:    row.id,
-    _date:  row[CONFIG.calendarCols.date]  ?? null,
-    _text:  String(row[CONFIG.calendarCols.text]  ?? ''),
-    _start: row[CONFIG.calendarCols.start] ?? null,
-    _end:   row[CONFIG.calendarCols.end]   ?? null,
+  const ids = data.id || [];
+  return ids.map((id, i) => ({
+    _id:    id,
+    _date:  (data[CONFIG.calendarCols.date]  || [])[i] ?? null,
+    _text:  String((data[CONFIG.calendarCols.text]  || [])[i] ?? ''),
+    _start: (data[CONFIG.calendarCols.start] || [])[i] ?? null,
+    _end:   (data[CONFIG.calendarCols.end]   || [])[i] ?? null,
   })).filter(e => e._text && e._text !== 'undefined' && e._text.trim() !== '');
 }
 
 /**
- * Fetch the People table once and populate the people[] array.
- * Uses docApi.fetchTable() which returns data in the same columnar
- * format as onRecords.
+ * Build a {id, name}[] array from a fetched Grist table.
+ * Reference columns require the row ID (integer) when writing.
+ * @param {object} data     Columnar table data from fetchTable()
+ * @param {string} nameCol  Column ID holding the display name
+ * @returns {{ id: number, name: string }[]}
+ */
+function buildRefList(data, nameCol) {
+  const ids   = data.id || [];
+  const names = data[nameCol] || [];
+  return ids.map((id, i) => ({
+    id,
+    name: String(names[i] || '').trim(),
+  })).filter(r => r.name);
+}
+
+/**
+ * Fetch People table → populates people[] with {id, name} objects.
+ * Used for the people_taking_the_place Reference column.
  */
 async function fetchPeople() {
   try {
     const data = await grist.docApi.fetchTable(CONFIG.tables.people);
-    // Pick the first non-manualSort string column as the name column
-    const colKeys = Object.keys(data).filter(k => k !== 'manualSort' && k !== 'id');
-    const nameCol = colKeys.find(k => (data[k] || []).some(v => typeof v === 'string' && v.trim()))
-                 || colKeys[0];
-    people = nameCol
-      ? (data[nameCol] || []).map(v => String(v || '').trim()).filter(Boolean)
-      : [];
+    people = buildRefList(data, CONFIG.peopleNameCol);
   } catch (e) {
-    document.getElementById('status-msg').textContent = '✗ Could not load People table';
+    console.error('fetchPeople error:', e);
+  }
+}
+
+/**
+ * Fetch Setting_available_place → populates availablePeople[] with {id, name}.
+ * Used for the people_available_place Reference column.
+ */
+async function fetchAvailablePeople() {
+  try {
+    const data = await grist.docApi.fetchTable(CONFIG.tables.availablePeople);
+    availablePeople = buildRefList(data, CONFIG.availablePeopleNameCol);
+  } catch (e) {
+    console.error('fetchAvailablePeople error:', e);
   }
 }
 
