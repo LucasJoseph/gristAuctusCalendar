@@ -19,9 +19,9 @@
  *   7. Week view      — renderWeek, overlap layout algorithm
  *   8b. Autocomplete  — "Who are you?" field
  *   9. Modal          — openModal, closeModal, confirmEvent
- *  10. Grist Plugin API — onRecords, write booking
+ *  10. Grist Plugin API — fetchTable, write booking
  *  11. UI helpers     — showToast
- *  12. Bootstrap      — grist.ready()
+ *  12. Bootstrap      — grist.ready(), loadData(), 5s refresh
  */
 
 
@@ -698,8 +698,7 @@ async function confirmEvent() {
    10. GRIST PLUGIN API
    ─────────────────────────────────────────────────────────────
    All data flows through the Grist plugin API:
-     • grist.onRecords()    — called whenever Calendar data changes
-     • grist.docApi.fetchTable() — one-time fetch of the People table
+     • grist.docApi.fetchTable() — read Calendar and People tables
      • grist.docApi.applyUserActions() — write booking (in confirmEvent)
    No fetch(), no API key, no CORS issues.
 ════════════════════════════════════════════════════════════════ */
@@ -797,53 +796,43 @@ function showToast(msg, type = '') {
 /* ═══════════════════════════════════════════════════════════════
    12. BOOTSTRAP
    ─────────────────────────────────────────────────────────────
-   1. Render an empty calendar immediately so the layout is visible.
-   2. Tell Grist the widget is ready and request full document access
-      (needed to read People and write to Getting_available_place).
-   3. grist.onRecords() fires immediately with current data, then
-      again whenever the Calendar table changes — no polling needed.
-   4. Fetch People once on startup (it changes rarely).
+   1. Render empty calendar so layout is visible immediately.
+   2. Tell Grist the widget is ready with full document access.
+   3. loadData() reads Calendar + People via fetchTable() directly
+      — no column mapping needed, no onRecords() loop issues.
+   4. Auto-refreshes every 5 seconds.
 ════════════════════════════════════════════════════════════════ */
 
-// Show the skeleton layout before data arrives
+// Show skeleton layout before data arrives
 render();
 
-// Tell Grist we are ready and declare our access requirements
-grist.ready({
-  requiredAccess: 'full',   // needed to read other tables + write bookings
-  columns: [
-    { name: 'date',           title: 'Date',       type: 'Date'     },
-    { name: 'calendar_text',  title: 'Text',       type: 'Text'     },
-    { name: 'start',          title: 'Start time', type: 'DateTime' },
-    { name: 'end',            title: 'End time',   type: 'DateTime' },
-  ],
-});
+// Tell Grist we are ready — full access needed to read/write tables
+grist.ready({ requiredAccess: 'full' });
 
 /**
- * grist.onRecords() is called:
- *   - immediately after grist.ready() with the current table data
- *   - again whenever any row in the linked Calendar table changes
- * This replaces the 5-second polling interval entirely.
- *
- * @param {object} records  Columnar table data from Grist
+ * Load Calendar and People data directly via fetchTable().
+ * Called once on startup then every 5 seconds.
+ * @param {boolean} silent  If true, skip the loading indicator.
  */
-grist.onRecords(async (records) => {
+async function loadData(silent = false) {
   const status = document.getElementById('status-msg');
+  if (!silent) status.textContent = 'Loading…';
   try {
-    // Debug: log raw structure so we can verify the format
-    const sample = Array.isArray(records) ? records[0] : { keys: Object.keys(records) };
-    console.log('onRecords format:', Array.isArray(records) ? 'array' : 'columnar', sample);
-
-    events = normaliseRecords(records);
+    const [calData] = await Promise.all([
+      grist.docApi.fetchTable(CONFIG.tables.calendar),
+      fetchPeople(),
+    ]);
+    events = normaliseRecords(calData);
     const now = new Date().toLocaleTimeString('en-GB', {
       hour: '2-digit', minute: '2-digit', second: '2-digit'
     });
     status.textContent = `✓ ${events.length} event(s) — updated ${now}`;
     render();
   } catch (err) {
-    status.textContent = `✗ ${err.message}`;
+    if (!silent) status.textContent = `✗ ${err.message}`;
   }
-});
+}
 
-// Load People once on startup (re-fetch on page reload if needed)
-fetchPeople();
+// Initial load then refresh every 5 seconds
+loadData();
+setInterval(() => loadData(true), 5000);
