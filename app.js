@@ -663,6 +663,8 @@ async function confirmEvent() {
   const whoIAm     = document.getElementById('modal-who-i-am').value.trim();
   const whosePlace = document.getElementById('modal-whose-place').value;
 
+  console.log('confirmEvent — whoIAm:', whoIAm, '| whosePlace:', whosePlace);
+
   if (!whoIAm)     { showToast('Please select who you are', 'error'); return; }
   if (!whosePlace) { showToast('Please select a spot', 'error'); return; }
 
@@ -674,27 +676,23 @@ async function confirmEvent() {
   const period = document.getElementById('modal-period-select').value
                || getPeriod(selectedEvent);
 
-  try {
-    /**
-     * grist.docApi.applyUserActions() sends a list of Grist "user actions".
-     * The AddRecord action takes: [tableName, rowId, fields]
-     * rowId = null means "insert new row".
-     */
-    /**
-     * Date columns in Grist expect Unix timestamps in seconds (not ISO strings).
-     * People columns may be Reference type (row ID) or plain Text.
-     * We send the name as-is for now — if columns are References,
-     * Grist may auto-resolve by display value depending on version.
-     */
-    const dateValue = ed ? Math.floor(ed.getTime() / 1000) : null;
+  const dateValue      = ed ? Math.floor(ed.getTime() / 1000) : null;
+  const whoIAmInt      = parseInt(whoIAm, 10);
+  const whosePlaceInt  = parseInt(whosePlace, 10);
 
+  const fields = {
+    [CONFIG.bookingCols.date]:            dateValue,
+    [CONFIG.bookingCols.personAvailable]: isNaN(whosePlaceInt) ? whosePlace : whosePlaceInt,
+    [CONFIG.bookingCols.personTaking]:    isNaN(whoIAmInt)     ? whoIAm     : whoIAmInt,
+    [CONFIG.bookingCols.period]:          period,
+  };
+
+  console.log('confirmEvent — fields to write:', JSON.stringify(fields));
+  console.log('confirmEvent — target table:', CONFIG.tables.bookings);
+
+  try {
     await grist.docApi.applyUserActions([
-      ['AddRecord', CONFIG.tables.bookings, null, {
-        [CONFIG.bookingCols.date]:            dateValue,
-        [CONFIG.bookingCols.personAvailable]: parseInt(whosePlace, 10) || whosePlace,
-        [CONFIG.bookingCols.personTaking]:    parseInt(whoIAm, 10)     || whoIAm,
-        [CONFIG.bookingCols.period]:          period,
-      }]
+      ['AddRecord', CONFIG.tables.bookings, null, fields]
     ]);
 
     showToast('Spot booked!', 'success');
@@ -702,6 +700,7 @@ async function confirmEvent() {
     selectedEvent = null;
 
   } catch (err) {
+    console.error('confirmEvent error:', err);
     showToast('Error: ' + err.message, 'error');
   }
 
