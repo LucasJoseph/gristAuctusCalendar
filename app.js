@@ -716,14 +716,43 @@ async function confirmEvent() {
  * @returns {Array}      Normalised event array
  */
 function normaliseRecords(data) {
-  const ids  = data.id  || [];
-  const cols = data.fields || {};
-  return ids.map((id, i) => ({
-    _id:    id,
-    _date:  (cols[CONFIG.calendarCols.date]  || [])[i] ?? null,
-    _text:  (cols[CONFIG.calendarCols.text]  || [])[i] ?? '',
-    _start: (cols[CONFIG.calendarCols.start] || [])[i] ?? null,
-    _end:   (cols[CONFIG.calendarCols.end]   || [])[i] ?? null,
+  /**
+   * Grist onRecords() can deliver data in two formats depending on
+   * whether column mapping is used:
+   *
+   * A) With column mapping (columns declared in grist.ready):
+   *    An array of row objects with mapped names as keys:
+   *    [ { id: 1, date: '...', calendar_text: '...', start: ..., end: ... }, ... ]
+   *
+   * B) Without column mapping (or fetchTable):
+   *    A columnar object:
+   *    { id: [1,2,...], date: [...], calendar_text: [...], ... }
+   *
+   * We detect which format we received and normalise to row objects.
+   */
+  let rows;
+
+  if (Array.isArray(data)) {
+    // Format A — already an array of row objects
+    rows = data;
+  } else {
+    // Format B — columnar object, transpose to row array
+    const ids = data.id || [];
+    rows = ids.map((id, i) => {
+      const row = { id };
+      for (const key of Object.keys(data)) {
+        if (key !== 'id') row[key] = data[key][i];
+      }
+      return row;
+    });
+  }
+
+  return rows.map(row => ({
+    _id:    row.id,
+    _date:  row[CONFIG.calendarCols.date]  ?? null,
+    _text:  row[CONFIG.calendarCols.text]  ?? '',
+    _start: row[CONFIG.calendarCols.start] ?? null,
+    _end:   row[CONFIG.calendarCols.end]   ?? null,
   })).filter(e => e._text && e._text.trim() !== '');
 }
 
@@ -801,6 +830,10 @@ grist.ready({
 grist.onRecords(async (records) => {
   const status = document.getElementById('status-msg');
   try {
+    // Debug: log raw structure so we can verify the format
+    const sample = Array.isArray(records) ? records[0] : { keys: Object.keys(records) };
+    console.log('onRecords format:', Array.isArray(records) ? 'array' : 'columnar', sample);
+
     events = normaliseRecords(records);
     const now = new Date().toLocaleTimeString('en-GB', {
       hour: '2-digit', minute: '2-digit', second: '2-digit'
