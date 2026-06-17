@@ -847,7 +847,12 @@ async function loadData(silent = false) {
     const [calData] = await Promise.all([
       grist.docApi.fetchTable(CONFIG.tables.calendar),
       fetchPeople(),
+      fetchAvailablePeople(),
     ]);
+    console.log('calData keys:', Object.keys(calData));
+    console.log('calData first values:', Object.fromEntries(
+      Object.entries(calData).map(([k, v]) => [k, Array.isArray(v) ? v[0] : v])
+    ));
     events = normaliseRecords(calData);
     const now = new Date().toLocaleTimeString('en-GB', {
       hour: '2-digit', minute: '2-digit', second: '2-digit'
