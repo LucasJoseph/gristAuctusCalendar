@@ -34,9 +34,10 @@
 const CONFIG = {
   /** Grist table IDs (case-sensitive, as shown in the Grist URL) */
   tables: {
-    calendar: 'Calendar',                  // source: events to display
-    people:   'People',                    // source: list of staff names
-    bookings: 'Getting_available_place',   // target: booking records
+    calendar:        'Calendar',                // source: events to display
+    people:          'People',                  // source: staff names (Reference for people_taking_the_place)
+    availablePeople: 'Setting_available_place', // source: available people (Reference for people_available_place)
+    bookings:        'Getting_available_place', // target: booking records
   },
 
   /** Column IDs inside the Calendar table */
@@ -54,6 +55,12 @@ const CONFIG = {
     personTaking:    'people_taking_the_place',
     period:          'Period',
   },
+
+  /** Name column ID in the People table (used for people_taking_the_place) */
+  peopleNameCol: 'people',
+
+  /** Name column ID in Setting_available_place (used for people_available_place) */
+  availablePeopleNameCol: 'people_str',
 
   /** Visible hour range for the week view (inclusive start, exclusive end) */
   dayStart: 6,   // 06:00
