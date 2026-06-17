@@ -553,7 +553,11 @@ function initWhoAutocomplete() {
       activeIdx = Math.max(activeIdx - 1, 0);
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      if (activeIdx >= 0) confirmSelection(items[activeIdx].textContent);
+      if (activeIdx >= 0) {
+        const name   = items[activeIdx].textContent;
+        const person = people.find(p => p.name === name) || { id: name, name };
+        confirmSelection(person);
+      }
       return;
     } else if (e.key === 'Escape') {
       list.classList.remove('open');
@@ -606,13 +610,17 @@ function openModal(ev) {
   // "Who are you?" — reset and init the autocomplete widget
   initWhoAutocomplete();
 
-  // "Which spot?" — names parsed from calendar_text
-  const places      = parseAvailablePlaces(ev._text);
+  // "Which spot?" — match names from calendar_text against availablePeople
+  // to get row IDs for the Reference column
+  const parsedNames = parseAvailablePlaces(ev._text);
   const placeSelect = document.getElementById('modal-whose-place');
   placeSelect.innerHTML = '<option value="">— Select —</option>';
-  places.forEach(name => {
+  parsedNames.forEach(name => {
+    const match = availablePeople.find(
+      p => p.name.toLowerCase() === name.toLowerCase()
+    );
     const opt = document.createElement('option');
-    opt.value = name;
+    opt.value       = match ? match.id : name;
     opt.textContent = name;
     placeSelect.appendChild(opt);
   });
@@ -672,11 +680,19 @@ async function confirmEvent() {
      * The AddRecord action takes: [tableName, rowId, fields]
      * rowId = null means "insert new row".
      */
+    /**
+     * Date columns in Grist expect Unix timestamps in seconds (not ISO strings).
+     * People columns may be Reference type (row ID) or plain Text.
+     * We send the name as-is for now — if columns are References,
+     * Grist may auto-resolve by display value depending on version.
+     */
+    const dateValue = ed ? Math.floor(ed.getTime() / 1000) : null;
+
     await grist.docApi.applyUserActions([
       ['AddRecord', CONFIG.tables.bookings, null, {
-        [CONFIG.bookingCols.date]:            ed ? ed.toISOString().slice(0, 10) : '',
-        [CONFIG.bookingCols.personAvailable]: whosePlace,
-        [CONFIG.bookingCols.personTaking]:    whoIAm,
+        [CONFIG.bookingCols.date]:            dateValue,
+        [CONFIG.bookingCols.personAvailable]: parseInt(whosePlace, 10) || whosePlace,
+        [CONFIG.bookingCols.personTaking]:    parseInt(whoIAm, 10)     || whoIAm,
         [CONFIG.bookingCols.period]:          period,
       }]
     ]);
