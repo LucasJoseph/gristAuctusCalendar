@@ -819,6 +819,16 @@ function showToast(msg, type = '') {
    4. Auto-refreshes every 5 seconds.
 ════════════════════════════════════════════════════════════════ */
 
+// Global error catcher — logs any uncaught error to the status bar
+window.onerror = (msg, src, line, col, err) => {
+  document.getElementById('status-msg').textContent = `✗ ${msg} (line ${line})`;
+  console.error('Global error:', msg, 'at line', line, err);
+};
+window.onunhandledrejection = (e) => {
+  document.getElementById('status-msg').textContent = `✗ ${e.reason}`;
+  console.error('Unhandled promise rejection:', e.reason);
+};
+
 // Show skeleton layout before data arrives
 render();
 
