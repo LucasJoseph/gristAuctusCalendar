@@ -170,8 +170,10 @@ function initCalendar() {
     buttonText: { today: 'Today' },
     allDaySlot:      false,
     nowIndicator:    true,
-    height:          '100%',
-    expandRows:      true,
+    height:          'auto',
+    expandRows:      false,
+    slotDuration:    '01:00:00',  // 1h slots so all 14h fit without scroll
+    slotLabelInterval: '01:00:00',
     eventClick(info) {
       // info.event.extendedProps.gristEvent holds our normalised object
       openModal(info.event.extendedProps.gristEvent);

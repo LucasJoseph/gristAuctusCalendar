@@ -48,12 +48,11 @@ body {
   overflow: hidden;
 }
 
-/* Force FullCalendar to fill the available height exactly */
-.fc,
-.fc-view-harness,
-.fc-view-harness-active {
-  height: 100% !important;
-}
+/* Let FullCalendar size itself — height:auto means it grows to fit all slots */
+.fc-view-harness { height: auto !important; }
+
+/* Each 1h slot row height — 14 slots (6am-8pm) × 40px = 560px total grid */
+.fc .fc-timegrid-slot { height: 40px !important; }
 
 
 /* ── 3. FULLCALENDAR OVERRIDES ───────────────────────────────── */
