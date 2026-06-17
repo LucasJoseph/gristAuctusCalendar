@@ -229,6 +229,7 @@ function isAllDayEvent(ev) {
  */
 function parseAvailablePlaces(text) {
   if (!text) return [];
+  text = String(text);
   const names = [];
   for (const chunk of text.split(/[\n,]+/)) {
     const name = chunk.trim().replace(/^-\s*/, '');
@@ -764,10 +765,10 @@ function normaliseRecords(data) {
   return rows.map(row => ({
     _id:    row.id,
     _date:  row[CONFIG.calendarCols.date]  ?? null,
-    _text:  row[CONFIG.calendarCols.text]  ?? '',
+    _text:  String(row[CONFIG.calendarCols.text]  ?? ''),
     _start: row[CONFIG.calendarCols.start] ?? null,
     _end:   row[CONFIG.calendarCols.end]   ?? null,
-  })).filter(e => e._text && e._text.trim() !== '');
+  })).filter(e => e._text && e._text !== 'undefined' && e._text.trim() !== '');
 }
 
 /**
@@ -845,6 +846,7 @@ async function loadData(silent = false) {
     render();
   } catch (err) {
     if (!silent) status.textContent = `✗ ${err.message}`;
+    console.error('loadData error:', err);
   }
 }
 
