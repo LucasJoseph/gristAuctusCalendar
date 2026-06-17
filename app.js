@@ -472,35 +472,34 @@ function initWhoAutocomplete() {
     activeIdx = -1;
 
     const q = query.trim().toLowerCase();
-    // Show all names when input is empty, filtered list otherwise
+    // people is [{id, name}] — filter on name, show all when empty
     const matches = q === ''
       ? people
-      : people.filter(p => p.toLowerCase().includes(q));
+      : people.filter(p => p.name.toLowerCase().includes(q));
 
     if (matches.length === 0) {
       list.classList.remove('open');
       return;
     }
 
-    matches.forEach(name => {
+    matches.forEach(person => {
       const li = document.createElement('li');
       li.setAttribute('role', 'option');
 
       // Highlight the matched portion in bold blue
       if (q) {
-        const matchStart = name.toLowerCase().indexOf(q);
-        const before  = name.slice(0, matchStart);
-        const matched = name.slice(matchStart, matchStart + q.length);
-        const after   = name.slice(matchStart + q.length);
+        const matchStart = person.name.toLowerCase().indexOf(q);
+        const before  = person.name.slice(0, matchStart);
+        const matched = person.name.slice(matchStart, matchStart + q.length);
+        const after   = person.name.slice(matchStart + q.length);
         li.innerHTML  = `${before}<mark>${matched}</mark>${after}`;
       } else {
-        li.textContent = name;
+        li.textContent = person.name;
       }
 
       li.addEventListener('mousedown', e => {
-        // mousedown fires before the input blur — preventDefault keeps list open
         e.preventDefault();
-        confirmSelection(name);
+        confirmSelection(person);
       });
       list.appendChild(li);
     });
@@ -509,13 +508,13 @@ function initWhoAutocomplete() {
   }
 
   /**
-   * Confirm a name as the selected value.
-   * Updates the visible input, the hidden value, and closes the list.
-   * @param {string} name
+   * Confirm a person as the selected value.
+   * Stores the row ID in the hidden field (needed for Reference columns).
+   * @param {{ id: number, name: string }} person
    */
-  function confirmSelection(name) {
-    input.value     = name;
-    hiddenVal.value = name;
+  function confirmSelection(person) {
+    input.value     = person.name;
+    hiddenVal.value = person.id;   // row ID for Grist Reference column
     input.classList.add('confirmed');
     list.classList.remove('open');
     list.innerHTML  = '';
@@ -543,7 +542,7 @@ function initWhoAutocomplete() {
       list.classList.remove('open');
       // If the typed text exactly matches a name, auto-confirm it
       const exact = people.find(
-        p => p.toLowerCase() === input.value.trim().toLowerCase()
+        p => p.name.toLowerCase() === input.value.trim().toLowerCase()
       );
       if (exact) confirmSelection(exact);
     }, 150);
