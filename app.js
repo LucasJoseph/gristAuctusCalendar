@@ -1,109 +1,70 @@
 /**
- * app.js  —  Grist Calendar (Custom Widget)
+ * app.js — Available Office Calendar (Grist Custom Widget)
  * ─────────────────────────────────────────────────────────────────
- * Runs inside Grist as a Custom Widget.
- * Data is injected by the Grist plugin API — no fetch() calls,
- * no API key, no CORS issues.
- *
- * Required Grist setup:
- *   • Add widget to page, set data source to the Calendar table
- *   • Grant "Full document access" when Grist prompts
+ * Uses FullCalendar 6 for the week view.
+ * Data comes from the Grist plugin API — no fetch(), no CORS issues.
  *
  * Sections:
- *   1. Configuration  — table & column names only (no URLs/keys)
- *   2. State          — runtime variables
- *   3. Date helpers   — parsing, formatting, comparison
- *   4. Period helpers — classify event as Morning / Afternoon / All day
- *   5. Text helpers   — parse available names from calendar_text
- *   6. Navigation & Render
- *   7. Week view      — renderWeek, overlap layout algorithm
- *   8b. Autocomplete  — "Who are you?" field
- *   9. Modal          — openModal, closeModal, confirmEvent
- *  10. Grist Plugin API — fetchTable, write booking
- *  11. UI helpers     — showToast
- *  12. Bootstrap      — grist.ready(), loadData(), 5s refresh
+ *   1. Configuration
+ *   2. State
+ *   3. Date & time helpers
+ *   4. Period helpers
+ *   5. Text helpers
+ *   6. FullCalendar setup & render
+ *   7. Autocomplete ("Who are you?")
+ *   8. Modal (openModal, closeModal, confirmEvent)
+ *   9. Grist API (normalise, fetchPeople, fetchAvailablePeople, loadData)
+ *  10. UI helpers
+ *  11. Bootstrap
  */
 
 
 /* ═══════════════════════════════════════════════════════════════
    1. CONFIGURATION
-   ─────────────────────────────────────────────────────────────
-   Only table and column names live here.
-   No API keys or URLs — the Grist plugin API handles all of that.
 ════════════════════════════════════════════════════════════════ */
 const CONFIG = {
-  /** Grist table IDs (case-sensitive, as shown in the Grist URL) */
   tables: {
-    calendar:        'Calendar',                // source: events to display
-    people:          'People',                  // source: staff names (Reference for people_taking_the_place)
-    availablePeople: 'Setting_available_place', // source: available people (Reference for people_available_place)
-    bookings:        'Getting_available_place', // target: booking records
+    calendar:        'Calendar',
+    people:          'People',
+    availablePeople: 'Setting_available_place',
+    bookings:        'Getting_available_place',
   },
-
-  /** Column IDs inside the Calendar table */
   calendarCols: {
-    date:  'date',           // Date column  (dd/mm/yyyy string)
-    text:  'calendar_text',  // Text column  ("N places:\nName1,\nName2")
-    start: 'start',          // Start time   (Grist DateTime → Unix timestamp)
-    end:   'end',            // End time     (Grist DateTime → Unix timestamp)
+    date:  'date',
+    text:  'calendar_text',
+    start: 'start',
+    end:   'end',
   },
-
-  /** Column IDs inside the Getting_available_place table */
   bookingCols: {
     date:            'date',
     personAvailable: 'people_available_place',
     personTaking:    'people_taking_the_place',
     period:          'Period',
   },
-
-  /** Name column ID in the People table (used for people_taking_the_place) */
-  peopleNameCol: 'people',
-
-  /** Name column ID in Setting_available_place (used for people_available_place) */
+  peopleNameCol:          'people',
   availablePeopleNameCol: 'people_str',
-
-  /** Visible hour range for the week view (inclusive start, exclusive end) */
-  dayStart: 6,   // 06:00
-  dayEnd:   20,  // 20:00
-
-  /** Height in pixels of one hour row — must match --hour-height in CSS */
-  hourHeight: 48,
+  dayStart: 6,
+  dayEnd:   20,
 };
 
 
 /* ═══════════════════════════════════════════════════════════════
    2. STATE
-   Runtime variables shared across rendering and modal functions.
 ════════════════════════════════════════════════════════════════ */
-let currentView   = 'week';
-let currentDate   = new Date();
-let events          = [];  // normalised event objects (from Calendar table)
-let people          = [];  // { id, name } objects from People table
-let availablePeople = [];  // { id, name } objects from Setting_available_place
-let selectedEvent   = null; // event currently shown in the modal
+let calendar        = null; // FullCalendar instance
+let events          = [];   // normalised event objects
+let people          = [];   // { id, name } from People table
+let availablePeople = [];   // { id, name } from Setting_available_place
+let selectedEvent   = null; // event shown in the modal
 
 
 /* ═══════════════════════════════════════════════════════════════
-   3. DATE HELPERS
+   3. DATE & TIME HELPERS
 ════════════════════════════════════════════════════════════════ */
-
-/** Short weekday names for the week-view header */
-const DAYS_EN = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-/** Full month names for the period label */
-const MONTHS_EN = [
-  'January','February','March','April','May','June',
-  'July','August','September','October','November','December'
-];
 
 /**
  * Parse a Grist date value into a JS Date.
- * Handles:
- *   - Unix timestamp (number, seconds)  → Grist Date/DateTime columns
- *   - "dd/mm/yyyy" string               → French locale date format
- *   - "yyyy-mm-dd" string               → ISO date format
- * @param {number|string|null} raw
- * @returns {Date|null}
+ * Handles Unix timestamps (s), dd/mm/yyyy strings, and ISO strings.
  */
 function parseEventDate(raw) {
   if (!raw) return null;
@@ -119,18 +80,13 @@ function parseEventDate(raw) {
 }
 
 /**
- * Parse a Grist DateTime value into { h, m, str }.
- * Grist stores DateTime as a Unix timestamp (full date + time, seconds).
- * @param {number|string|null} raw
- * @returns {{ h: number, m: number, str: string }|null}
+ * Parse a Grist DateTime (Unix timestamp in seconds) into { h, m, str }.
  */
 function parseTime(raw) {
   if (!raw) return null;
   if (typeof raw === 'number') {
-    // Full Unix timestamp — extract local hours and minutes
     const d = new Date(raw * 1000);
-    const h = d.getHours();
-    const m = d.getMinutes();
+    const h = d.getHours(), m = d.getMinutes();
     return { h, m, str: `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}` };
   }
   if (typeof raw === 'string') {
@@ -143,61 +99,17 @@ function parseTime(raw) {
   return null;
 }
 
-/** True if two Date objects fall on the same calendar day */
-function isSameDay(a, b) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth()    === b.getMonth()    &&
-    a.getDate()     === b.getDate()
-  );
-}
-
-/** True if a Date is today */
-function isToday(d) { return isSameDay(d, new Date()); }
-
-/**
- * Return the Monday of the week containing d.
- * JS getDay() returns 0=Sun … 6=Sat; we map to 0=Mon … 6=Sun.
- */
-function getWeekStart(d) {
-  const day  = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + diff);
-}
-
-/**
- * Human-readable date string for the modal summary.
- * e.g. "Monday 16 June 2025"
- */
+/** Human-readable date for the modal summary */
 function fmtDate(d) {
   return d.toLocaleDateString('en-GB', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
   });
 }
 
-/** Filter global events[] to those falling on a given Date */
-function getEventsForDay(d) {
-  return events.filter(e => {
-    const ed = parseEventDate(e._date);
-    return ed && isSameDay(ed, d);
-  });
-}
-
 
 /* ═══════════════════════════════════════════════════════════════
    4. PERIOD HELPERS
-   Classify an event as Morning / Afternoon / All day based on
-   its start and end times.
-   Convention:
-     All day   →  starts ≤ 08:00  AND  ends ≥ 17:00
-     Morning   →  ends   ≤ 13:00
-     Afternoon →  starts ≥ 12:00
 ════════════════════════════════════════════════════════════════ */
-
-/**
- * @param {object} ev  normalised event object
- * @returns {'All day'|'Morning'|'Afternoon'}
- */
 function getPeriod(ev) {
   const st = parseTime(ev._start);
   const en = parseTime(ev._end);
@@ -208,40 +120,23 @@ function getPeriod(ev) {
   return 'All day';
 }
 
-/** Shorthand: true when the event covers the whole working day */
 function isAllDayEvent(ev) {
   return getPeriod(ev) === 'All day';
 }
 
 
 /* ═══════════════════════════════════════════════════════════════
-   5. TEXT HELPERS — parse calendar_text
-   The calendar_text field is produced by a Grist formula:
-
-     entries = $available_place
-     if len(entries) != 0:
-       return f"{len(entries)} places:\n" + ",\n".join(entries)
-
-   Example value:
+   5. TEXT HELPERS
+   Parses the calendar_text formula output:
      "3 places:\nAlice,\nBob,\nCarol"
-
-   We want to extract ["Alice", "Bob", "Carol"].
+   → ["Alice", "Bob", "Carol"]
 ════════════════════════════════════════════════════════════════ */
-
-/**
- * Extract individual names from a calendar_text string.
- * Splits on newlines and commas, strips leading "N places:" header
- * and any entries that start with a digit.
- * @param {string} text
- * @returns {string[]}
- */
 function parseAvailablePlaces(text) {
   if (!text) return [];
   text = String(text);
   const names = [];
   for (const chunk of text.split(/[\n,]+/)) {
     const name = chunk.trim().replace(/^-\s*/, '');
-    // Skip the header line ("3 places:") and empty strings
     if (name && !/places?:/i.test(name) && !/^\d+/.test(name)) {
       names.push(name);
     }
@@ -251,408 +146,201 @@ function parseAvailablePlaces(text) {
 
 
 /* ═══════════════════════════════════════════════════════════════
-   6. NAVIGATION & RENDER
+   6. FULLCALENDAR SETUP & RENDER
+   ─────────────────────────────────────────────────────────────
+   We create the FullCalendar instance once, then call
+   updateCalendarEvents() whenever the events array changes.
+   FullCalendar handles the week grid, navigation, and time slots.
 ════════════════════════════════════════════════════════════════ */
 
-
-/**
- * Move forward (+1) or backward (-1) by one week or one month.
- * @param {1|-1} dir
- */
-/**
- * Move forward (+1) or backward (-1) by one week.
- * @param {1|-1} dir
- */
-function navigate(dir) {
-  currentDate = new Date(currentDate.getTime() + dir * 7 * 86400000);
-  render();
+/** Initialise the FullCalendar instance (called once on startup) */
+function initCalendar() {
+  const el = document.getElementById('calendar');
+  calendar = new FullCalendar.Calendar(el, {
+    initialView:     'timeGridWeek',  // week view with time slots
+    firstDay:        1,               // Monday first
+    slotMinTime:     `${String(CONFIG.dayStart).padStart(2,'0')}:00:00`,
+    slotMaxTime:     `${String(CONFIG.dayEnd).padStart(2,'0')}:00:00`,
+    slotDuration:    '00:30:00',
+    headerToolbar: {
+      left:   'prev,next today',
+      center: 'title',
+      right:  '',                     // no view switcher needed
+    },
+    buttonText: { today: 'Today' },
+    allDaySlot:      false,
+    nowIndicator:    true,
+    height:          'parent',
+    eventClick(info) {
+      // info.event.extendedProps.gristEvent holds our normalised object
+      openModal(info.event.extendedProps.gristEvent);
+    },
+    eventClassNames(info) {
+      return [`color-${info.event.extendedProps.colorIdx % 3}`];
+    },
+  });
+  calendar.render();
 }
 
-/** Jump to the current week */
-function goToday() {
-  currentDate = new Date();
-  render();
-}
+/**
+ * Convert our normalised events[] into FullCalendar event objects
+ * and replace the current event source.
+ * Called every time loadData() refreshes the data.
+ */
+function updateCalendarEvents() {
+  if (!calendar) return;
 
-/** Render the calendar */
-function render() {
-  renderWeek();
+  const fcEvents = events.map((ev, idx) => {
+    const st = parseTime(ev._start);
+    const en = parseTime(ev._end);
+    const ed = parseEventDate(ev._date);
+    if (!ed || !st) return null;
+
+    // Build ISO datetime strings FullCalendar expects
+    const pad  = n => String(n).padStart(2, '0');
+    const dateStr = `${ed.getFullYear()}-${pad(ed.getMonth()+1)}-${pad(ed.getDate())}`;
+    const start   = `${dateStr}T${st.str}:00`;
+    const end     = en ? `${dateStr}T${en.str}:00` : null;
+
+    return {
+      title:          ev._text || '(no title)',
+      start,
+      end,
+      extendedProps: {
+        gristEvent: ev,
+        colorIdx:   idx,
+      },
+    };
+  }).filter(Boolean);
+
+  // Replace all events in one shot — avoids flicker
+  calendar.removeAllEvents();
+  calendar.addEventSource(fcEvents);
 }
 
 
 /* ═══════════════════════════════════════════════════════════════
-   7. WEEK VIEW
+   7. AUTOCOMPLETE — "Who are you?" field
    ─────────────────────────────────────────────────────────────
-   Layout:
-     • A CSS grid provides the visual background (lines, labels).
-     • A separate overlay grid (position:absolute) holds the actual
-       event blocks so they can receive clicks without being blocked
-       by the background cells.
-     • Events are clipped to the visible hour window [dayStart, dayEnd].
-     • Overlapping events in the same column are split side-by-side
-       using a simple greedy algorithm.
+   Text input that filters the people[] array as you type.
+   Stores the Grist row ID in a hidden field for the Reference column.
 ════════════════════════════════════════════════════════════════ */
-
-function renderWeek() {
-  // Compute the Monday–Sunday span
-  const ws = getWeekStart(currentDate);
-  const we = new Date(ws.getTime() + 6 * 86400000);
-  document.getElementById('period-label').textContent =
-    `${ws.getDate()} ${MONTHS_EN[ws.getMonth()].slice(0,3)}. – ` +
-    `${we.getDate()} ${MONTHS_EN[we.getMonth()].slice(0,3)}. ${we.getFullYear()}`;
-
-  const days = Array.from({ length: 7 }, (_, i) =>
-    new Date(ws.getTime() + i * 86400000)
-  );
-
-  // ── Background grid ──────────────────────────────────────────
-  let html = `<div class="week-wrapper"><div class="week-grid">`;
-
-  // Header row
-  html += `<div class="week-header-cell time-col"></div>`;
-  days.forEach((d, i) => {
-    const cls = isToday(d) ? ' today-col' : '';
-    html += `<div class="week-header-cell${cls}">
-      <span>${DAYS_EN[i]}</span>
-      <span class="day-num">${d.getDate()}</span>
-    </div>`;
-  });
-
-  // Hour rows — only the visible window [dayStart … dayEnd)
-  for (let h = CONFIG.dayStart; h < CONFIG.dayEnd; h++) {
-    const label = String(h).padStart(2, '0') + 'h';
-    html += `<div class="time-col"><div class="time-slot">${label}</div></div>`;
-    days.forEach(d => {
-      const cls = isToday(d) ? ' today-col' : '';
-      html += `<div class="day-col${cls}"><div class="hour-row"></div></div>`;
-    });
-  }
-  html += `</div>`; // end .week-grid
-
-  // ── Events overlay ───────────────────────────────────────────
-  // One spacer + one event container per day column.
-  // The spacer height is corrected by JS once the header has rendered.
-  html += `<div class="week-events-layer">`;
-  html += `<div style="width:${CONFIG.hourHeight}px"><div class="week-events-layer-spacer"></div></div>`;
-  days.forEach((_, i) => {
-    html += `<div>
-      <div class="week-events-layer-spacer"></div>
-      <div class="week-day-events" data-dayidx="${i}"></div>
-    </div>`;
-  });
-  html += `</div></div>`; // end overlay + wrapper
-
-  document.getElementById('calendar').innerHTML = html;
-
-  // Align overlay spacers to the actual rendered header height
-  requestAnimationFrame(() => {
-    const headerCell = document.querySelector('.week-header-cell');
-    if (headerCell) {
-      const h = headerCell.offsetHeight;
-      document.querySelectorAll('.week-events-layer-spacer')
-        .forEach(el => el.style.height = h + 'px');
-    }
-  });
-
-  // ── Place event blocks ───────────────────────────────────────
-  /**
-   * Two events overlap when their vertical spans intersect.
-   * @param {{ top:number, height:number }} a
-   * @param {{ top:number, height:number }} b
-   */
-  function overlaps(a, b) {
-    return a.top < b.top + b.height && b.top < a.top + a.height;
-  }
-
-  days.forEach((day, dayIdx) => {
-    const container = document.querySelector(
-      `.week-day-events[data-dayidx="${dayIdx}"]`
-    );
-    if (!container) return;
-
-    // Collect events for this day that have a parseable start time
-    const dayEvs = events
-      .map((ev, i) => ({ ev, i }))
-      .filter(({ ev }) => {
-        const ed = parseEventDate(ev._date);
-        return ed && isSameDay(ed, day);
-      });
-    if (!dayEvs.length) return;
-
-    // Build layout objects — positions in pixels relative to dayStart
-    const parsed = dayEvs.map(({ ev, i }) => {
-      const st = parseTime(ev._start);
-      const en = parseTime(ev._end);
-      if (!st) return null;
-
-      // Clamp to the visible window so events don't overflow the grid
-      const clampedStart = Math.max(st.h + st.m / 60, CONFIG.dayStart);
-      const clampedEnd   = en
-        ? Math.min(en.h + en.m / 60, CONFIG.dayEnd)
-        : Math.min(st.h + 1 + st.m / 60, CONFIG.dayEnd);
-
-      const top    = (clampedStart - CONFIG.dayStart) * CONFIG.hourHeight;
-      const height = Math.max((clampedEnd - clampedStart) * CONFIG.hourHeight, 20);
-      return { ev, i, st, en, top, height, _col: 0, _totalCols: 1 };
-    }).filter(Boolean);
-
-    // Greedy column assignment for overlapping events
-    parsed.forEach((item, idx) => {
-      const concurrent = parsed.filter((other, j) => j !== idx && overlaps(other, item));
-      item._totalCols = concurrent.length + 1;
-      item._col = 0;
-      for (let c = 0; c < item._totalCols; c++) {
-        if (!concurrent.some(o => o._col === c)) { item._col = c; break; }
-      }
-    });
-
-    // Create DOM elements for each event block
-    parsed.forEach(item => {
-      const chip = document.createElement('div');
-      chip.className = `week-event color-${item.i % 3}`;
-      chip.style.position = 'absolute';
-      chip.style.top      = item.top + 'px';
-      chip.style.height   = item.height + 'px';
-      chip.style.cursor   = 'pointer';
-
-      const pct = 100 / item._totalCols;
-      chip.style.left  = (item._col * pct) + '%';
-      chip.style.width = `calc(${pct}% - 4px)`;
-
-      chip.textContent = item.ev._text || '(no title)';
-      chip.title = `${item.ev._text} — ${item.st.str}${item.en ? ' → ' + item.en.str : ''}`;
-
-      chip.addEventListener('click', e => {
-        e.stopPropagation(); // prevent modal-bg click handler from firing
-        openModal(item.ev);
-      });
-      container.appendChild(chip);
-    });
-  });
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   8b. AUTOCOMPLETE — "Who are you?" field
-   ─────────────────────────────────────────────────────────────
-   Replaces the native <select> with a text input + floating list.
-   Features:
-     • Filters on every keystroke, matching anywhere in the name
-       (so "ar" matches "Marie", "Martin", "Bernard" etc.)
-     • Highlights the matched portion in the suggestion
-     • Keyboard navigation: ↑↓ to move, Enter to confirm, Escape to close
-     • Clicking outside closes the list
-     • Confirms selection into the hidden #modal-who-i-am input
-════════════════════════════════════════════════════════════════ */
-
-/**
- * Initialise (or reset) the autocomplete widget.
- * Called each time the modal opens so it starts clean.
- */
 function initWhoAutocomplete() {
   const input     = document.getElementById('who-input');
   const list      = document.getElementById('who-list');
   const hiddenVal = document.getElementById('modal-who-i-am');
 
-  // Clear previous state
   input.value = '';
   input.classList.remove('confirmed');
   hiddenVal.value = '';
   list.innerHTML  = '';
   list.classList.remove('open');
 
-  let activeIdx = -1; // keyboard-highlighted index
+  let activeIdx = -1;
 
-  /**
-   * Render the suggestion list for a given query string.
-   * Matches anywhere in the name (case-insensitive).
-   * @param {string} query
-   */
   function showSuggestions(query) {
     list.innerHTML = '';
     activeIdx = -1;
-
     const q = query.trim().toLowerCase();
-    // people is [{id, name}] — filter on name, show all when empty
     const matches = q === ''
       ? people
       : people.filter(p => p.name.toLowerCase().includes(q));
 
-    if (matches.length === 0) {
-      list.classList.remove('open');
-      return;
-    }
+    if (!matches.length) { list.classList.remove('open'); return; }
 
     matches.forEach(person => {
       const li = document.createElement('li');
       li.setAttribute('role', 'option');
-
-      // Highlight the matched portion in bold blue
       if (q) {
-        const matchStart = person.name.toLowerCase().indexOf(q);
-        const before  = person.name.slice(0, matchStart);
-        const matched = person.name.slice(matchStart, matchStart + q.length);
-        const after   = person.name.slice(matchStart + q.length);
-        li.innerHTML  = `${before}<mark>${matched}</mark>${after}`;
+        const i = person.name.toLowerCase().indexOf(q);
+        li.innerHTML = person.name.slice(0, i)
+          + `<mark>${person.name.slice(i, i + q.length)}</mark>`
+          + person.name.slice(i + q.length);
       } else {
         li.textContent = person.name;
       }
-
-      li.addEventListener('mousedown', e => {
-        e.preventDefault();
-        confirmSelection(person);
-      });
+      li.addEventListener('mousedown', e => { e.preventDefault(); confirmSelection(person); });
       list.appendChild(li);
     });
-
     list.classList.add('open');
   }
 
-  /**
-   * Confirm a person as the selected value.
-   * Stores the row ID in the hidden field (needed for Reference columns).
-   * @param {{ id: number, name: string }} person
-   */
   function confirmSelection(person) {
     input.value     = person.name;
-    hiddenVal.value = person.id;   // row ID for Grist Reference column
+    hiddenVal.value = person.id;
     input.classList.add('confirmed');
     list.classList.remove('open');
-    list.innerHTML  = '';
-    activeIdx       = -1;
+    list.innerHTML = '';
+    activeIdx = -1;
   }
 
-  // ── Event listeners ───────────────────────────────────────────
-
-  // Filter list on every keystroke
-  input.addEventListener('input', () => {
-    input.classList.remove('confirmed');
-    hiddenVal.value = '';
-    showSuggestions(input.value);
-  });
-
-  // Show full list when the field is focused (even if empty)
-  input.addEventListener('focus', () => {
-    showSuggestions(input.value);
-  });
-
-  // Close list when focus leaves the widget entirely
-  input.addEventListener('blur', () => {
-    // Delay so mousedown on a list item fires first
+  input.addEventListener('input',  () => { input.classList.remove('confirmed'); hiddenVal.value = ''; showSuggestions(input.value); });
+  input.addEventListener('focus',  () => showSuggestions(input.value));
+  input.addEventListener('blur',   () => {
     setTimeout(() => {
       list.classList.remove('open');
-      // If the typed text exactly matches a name, auto-confirm it
-      const exact = people.find(
-        p => p.name.toLowerCase() === input.value.trim().toLowerCase()
-      );
+      const exact = people.find(p => p.name.toLowerCase() === input.value.trim().toLowerCase());
       if (exact) confirmSelection(exact);
     }, 150);
   });
-
-  // Keyboard navigation: ↑ ↓ Enter Escape
   input.addEventListener('keydown', e => {
     const items = list.querySelectorAll('li');
-    if (!list.classList.contains('open') || items.length === 0) return;
-
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      activeIdx = Math.min(activeIdx + 1, items.length - 1);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      activeIdx = Math.max(activeIdx - 1, 0);
-    } else if (e.key === 'Enter') {
+    if (!list.classList.contains('open') || !items.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx = Math.min(activeIdx + 1, items.length - 1); }
+    else if (e.key === 'ArrowUp')  { e.preventDefault(); activeIdx = Math.max(activeIdx - 1, 0); }
+    else if (e.key === 'Enter') {
       e.preventDefault();
       if (activeIdx >= 0) {
-        const name   = items[activeIdx].textContent;
-        const person = people.find(p => p.name === name) || { id: name, name };
-        confirmSelection(person);
+        const name = items[activeIdx].textContent;
+        confirmSelection(people.find(p => p.name === name) || { id: name, name });
       }
       return;
-    } else if (e.key === 'Escape') {
-      list.classList.remove('open');
-      activeIdx = -1;
-      return;
-    }
-
-    // Update the visual highlight
+    } else if (e.key === 'Escape') { list.classList.remove('open'); activeIdx = -1; return; }
     items.forEach((li, i) => li.classList.toggle('active', i === activeIdx));
     if (activeIdx >= 0) items[activeIdx].scrollIntoView({ block: 'nearest' });
   });
-
-  // Auto-focus disabled — user clicks the field manually when ready.
 }
 
 
 /* ═══════════════════════════════════════════════════════════════
-   9. MODAL — booking flow
-   ─────────────────────────────────────────────────────────────
-   openModal(ev)   — populate and show the modal for a given event
-   closeModal(e?)  — hide the modal (only if clicking the backdrop)
-   confirmEvent()  — POST a booking record to Grist, then refresh
+   8. MODAL
 ════════════════════════════════════════════════════════════════ */
 
-/**
- * Open the booking modal for an event.
- * Populates:
- *   - date, hours, period in the summary row
- *   - "Who are you?" dropdown from the people[] array
- *   - "Which spot?" dropdown from calendar_text names
- *   - Period selector (only for all-day events)
- * @param {object} ev  normalised event object
- */
+/** Open the booking modal for a given event */
 function openModal(ev) {
   selectedEvent = ev;
-  const ed      = parseEventDate(ev._date);
-  const st      = parseTime(ev._start);
-  const en      = parseTime(ev._end);
-  const period  = getPeriod(ev);
-  const allDay  = isAllDayEvent(ev);
+  const ed     = parseEventDate(ev._date);
+  const st     = parseTime(ev._start);
+  const en     = parseTime(ev._end);
+  const period = getPeriod(ev);
+  const allDay = isAllDayEvent(ev);
 
-  // Summary
   document.getElementById('modal-title').textContent  = ev._text || '(no title)';
   document.getElementById('modal-date').textContent   = ed ? fmtDate(ed) : '—';
-  document.getElementById('modal-hours').textContent  = st
-    ? st.str + (en ? ' → ' + en.str : '')
-    : '—';
+  document.getElementById('modal-hours').textContent  = st ? st.str + (en ? ' → ' + en.str : '') : '—';
   document.getElementById('modal-period').textContent = period;
 
-  // "Who are you?" — reset and init the autocomplete widget
-  initWhoAutocomplete();
-
-  // "Which spot?" — match names from calendar_text against availablePeople
-  // to get row IDs for the Reference column
-  const parsedNames = parseAvailablePlaces(ev._text);
+  // Populate "Which spot?" from calendar_text
   const placeSelect = document.getElementById('modal-whose-place');
   placeSelect.innerHTML = '<option value="">— Select —</option>';
-  parsedNames.forEach(name => {
-    const match = availablePeople.find(
-      p => p.name.toLowerCase() === name.toLowerCase()
-    );
+  parseAvailablePlaces(ev._text).forEach(name => {
+    const match = availablePeople.find(p => p.name.toLowerCase() === name.toLowerCase());
     const opt = document.createElement('option');
     opt.value       = match ? match.id : name;
     opt.textContent = name;
     placeSelect.appendChild(opt);
   });
 
-  // Period selector — only shown for all-day events
-  const periodRow    = document.getElementById('modal-period-row');
-  const periodSelect = document.getElementById('modal-period-select');
-  if (allDay) {
-    periodRow.style.display = 'block';
-    periodSelect.value = 'All day';
-  } else {
-    periodRow.style.display = 'none';
-    periodSelect.value = period;
-  }
+  // Period selector — only for all-day events
+  const periodRow = document.getElementById('modal-period-row');
+  periodRow.style.display = allDay ? 'block' : 'none';
+  document.getElementById('modal-period-select').value = 'All day';
 
+  initWhoAutocomplete();
   document.getElementById('modal-bg').classList.add('open');
 }
 
-/**
- * Close the modal.
- * When called from the backdrop onclick handler, only closes if the
- * click target is the backdrop itself (not the modal card).
- * @param {MouseEvent|undefined} e
- */
+/** Close the modal (only if clicking the backdrop itself) */
 function closeModal(e) {
   if (!e || e.target === document.getElementById('modal-bg')) {
     document.getElementById('modal-bg').classList.remove('open');
@@ -660,18 +348,11 @@ function closeModal(e) {
   }
 }
 
-/**
- * Write a booking record to Grist via the plugin API, then close
- * the modal. The calendar refreshes automatically because Grist
- * will re-trigger onRecords() after any table change.
- */
+/** Write a booking to Grist then refresh */
 async function confirmEvent() {
   if (!selectedEvent) return;
-
   const whoIAm     = document.getElementById('modal-who-i-am').value.trim();
   const whosePlace = document.getElementById('modal-whose-place').value;
-
-  console.log('confirmEvent — whoIAm:', whoIAm, '| whosePlace:', whosePlace);
 
   if (!whoIAm)     { showToast('Please select who you are', 'error'); return; }
   if (!whosePlace) { showToast('Please select a spot', 'error'); return; }
@@ -680,36 +361,24 @@ async function confirmEvent() {
   btn.classList.add('loading');
   btn.textContent = 'Saving…';
 
-  const ed     = parseEventDate(selectedEvent._date);
-  const period = document.getElementById('modal-period-select').value
-               || getPeriod(selectedEvent);
-
-  const dateValue      = ed ? Math.floor(ed.getTime() / 1000) : null;
-  const whoIAmInt      = parseInt(whoIAm, 10);
-  const whosePlaceInt  = parseInt(whosePlace, 10);
-
-  const fields = {
-    [CONFIG.bookingCols.date]:            dateValue,
-    [CONFIG.bookingCols.personAvailable]: isNaN(whosePlaceInt) ? whosePlace : whosePlaceInt,
-    [CONFIG.bookingCols.personTaking]:    isNaN(whoIAmInt)     ? whoIAm     : whoIAmInt,
-    [CONFIG.bookingCols.period]:          period,
-  };
-
-  console.log('confirmEvent — fields to write:', JSON.stringify(fields));
-  console.log('confirmEvent — target table:', CONFIG.tables.bookings);
+  const ed           = parseEventDate(selectedEvent._date);
+  const period       = document.getElementById('modal-period-select').value || getPeriod(selectedEvent);
+  const dateValue    = ed ? Math.floor(ed.getTime() / 1000) : null;
+  const whoIAmInt    = parseInt(whoIAm, 10);
+  const whosePlaceInt = parseInt(whosePlace, 10);
 
   try {
-    await grist.docApi.applyUserActions([
-      ['AddRecord', CONFIG.tables.bookings, null, fields]
-    ]);
-
+    await grist.docApi.applyUserActions([['AddRecord', CONFIG.tables.bookings, null, {
+      [CONFIG.bookingCols.date]:            dateValue,
+      [CONFIG.bookingCols.personAvailable]: isNaN(whosePlaceInt) ? whosePlace : whosePlaceInt,
+      [CONFIG.bookingCols.personTaking]:    isNaN(whoIAmInt)     ? whoIAm     : whoIAmInt,
+      [CONFIG.bookingCols.period]:          period,
+    }]]);
     showToast('Spot booked!', 'success');
     document.getElementById('modal-bg').classList.remove('open');
     selectedEvent = null;
     await loadData(true);
-
   } catch (err) {
-    console.error('confirmEvent error:', err);
     showToast('Error: ' + err.message, 'error');
   }
 
@@ -719,22 +388,10 @@ async function confirmEvent() {
 
 
 /* ═══════════════════════════════════════════════════════════════
-   10. GRIST PLUGIN API
-   ─────────────────────────────────────────────────────────────
-   All data flows through the Grist plugin API:
-     • grist.docApi.fetchTable() — read Calendar and People tables
-     • grist.docApi.applyUserActions() — write booking (in confirmEvent)
-   No fetch(), no API key, no CORS issues.
+   9. GRIST API
 ════════════════════════════════════════════════════════════════ */
 
-/**
- * Normalise a raw Grist columnar table object into the array of
- * event objects the rest of the app expects.
- * fetchTable() always returns columnar format:
- *   { id: [1,2,3], date: [...], calendar_text: [...], ... }
- * @param {object} data  Raw Grist table data
- * @returns {Array}      Normalised event array
- */
+/** Columnar Grist table → normalised event array */
 function normaliseRecords(data) {
   const ids = data.id || [];
   return ids.map((id, i) => ({
@@ -746,58 +403,46 @@ function normaliseRecords(data) {
   })).filter(e => e._text && e._text !== 'undefined' && e._text.trim() !== '');
 }
 
-/**
- * Build a {id, name}[] array from a fetched Grist table.
- * Reference columns require the row ID (integer) when writing.
- * @param {object} data     Columnar table data from fetchTable()
- * @param {string} nameCol  Column ID holding the display name
- * @returns {{ id: number, name: string }[]}
- */
+/** Build {id, name}[] from a Grist table (for Reference column writes) */
 function buildRefList(data, nameCol) {
-  const ids   = data.id || [];
-  const names = data[nameCol] || [];
-  return ids.map((id, i) => ({
+  return (data.id || []).map((id, i) => ({
     id,
-    name: String(names[i] || '').trim(),
+    name: String((data[nameCol] || [])[i] || '').trim(),
   })).filter(r => r.name);
 }
 
-/**
- * Fetch People table → populates people[] with {id, name} objects.
- * Used for the people_taking_the_place Reference column.
- */
 async function fetchPeople() {
   try {
     const data = await grist.docApi.fetchTable(CONFIG.tables.people);
     people = buildRefList(data, CONFIG.peopleNameCol);
-  } catch (e) {
-    console.error('fetchPeople error:', e);
-  }
+  } catch (e) { console.error('fetchPeople:', e); }
 }
 
-/**
- * Fetch Setting_available_place → populates availablePeople[] with {id, name}.
- * Used for the people_available_place Reference column.
- */
 async function fetchAvailablePeople() {
   try {
     const data = await grist.docApi.fetchTable(CONFIG.tables.availablePeople);
     availablePeople = buildRefList(data, CONFIG.availablePeopleNameCol);
-  } catch (e) {
-    console.error('fetchAvailablePeople error:', e);
+  } catch (e) { console.error('fetchAvailablePeople:', e); }
+}
+
+async function loadData(silent = false) {
+  try {
+    const [calData] = await Promise.all([
+      grist.docApi.fetchTable(CONFIG.tables.calendar),
+      fetchPeople(),
+      fetchAvailablePeople(),
+    ]);
+    events = normaliseRecords(calData);
+    updateCalendarEvents();
+  } catch (err) {
+    if (!silent) console.error('loadData:', err);
   }
 }
 
 
 /* ═══════════════════════════════════════════════════════════════
-   11. UI HELPERS
+   10. UI HELPERS
 ════════════════════════════════════════════════════════════════ */
-
-/**
- * Show a brief toast notification.
- * @param {string} msg
- * @param {'success'|'error'|''} type
- */
 function showToast(msg, type = '') {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -807,61 +452,9 @@ function showToast(msg, type = '') {
 
 
 /* ═══════════════════════════════════════════════════════════════
-   12. BOOTSTRAP
-   ─────────────────────────────────────────────────────────────
-   1. Render empty calendar so layout is visible immediately.
-   2. Tell Grist the widget is ready with full document access.
-   3. loadData() reads Calendar + People via fetchTable() directly
-      — no column mapping needed, no onRecords() loop issues.
-   4. Auto-refreshes every 5 seconds.
+   11. BOOTSTRAP
 ════════════════════════════════════════════════════════════════ */
-
-// Global error catcher — logs any uncaught error to the status bar
-window.onerror = (msg, src, line, col, err) => {
-  document.getElementById('status-msg').textContent = `✗ ${msg} (line ${line})`;
-  console.error('Global error:', msg, 'at line', line, err);
-};
-window.onunhandledrejection = (e) => {
-  document.getElementById('status-msg').textContent = `✗ ${e.reason}`;
-  console.error('Unhandled promise rejection:', e.reason);
-};
-
-// Show skeleton layout before data arrives
-render();
-
-// Tell Grist we are ready — full access needed to read/write tables
+initCalendar();
 grist.ready({ requiredAccess: 'full' });
-
-/**
- * Load Calendar and People data directly via fetchTable().
- * Called once on startup then every 5 seconds.
- * @param {boolean} silent  If true, skip the loading indicator.
- */
-async function loadData(silent = false) {
-  const status = document.getElementById('status-msg');
-  if (!silent) status.textContent = 'Loading…';
-  try {
-    const [calData] = await Promise.all([
-      grist.docApi.fetchTable(CONFIG.tables.calendar),
-      fetchPeople(),
-      fetchAvailablePeople(),
-    ]);
-    console.log('calData keys:', Object.keys(calData));
-    console.log('calData first values:', Object.fromEntries(
-      Object.entries(calData).map(([k, v]) => [k, Array.isArray(v) ? v[0] : v])
-    ));
-    events = normaliseRecords(calData);
-    const now = new Date().toLocaleTimeString('en-GB', {
-      hour: '2-digit', minute: '2-digit', second: '2-digit'
-    });
-    status.textContent = `✓ ${events.length} event(s) — updated ${now}`;
-    render();
-  } catch (err) {
-    if (!silent) status.textContent = `✗ ${err.message}`;
-    console.error('loadData error:', err);
-  }
-}
-
-// Initial load then refresh every 5 seconds
 loadData();
 setInterval(() => loadData(true), 5000);

@@ -1,327 +1,163 @@
-/* ═══════════════════════════════════════════════════════════════════
-   style.css  —  Grist Calendar
-   ───────────────────────────────────────────────────────────────────
-   Structure:
-     1. Design tokens (CSS variables)
-     2. Reset & base
-     3. Header
-     4. Calendar container
-     5. Week view  —  grid, time column, day columns
-     6. Week view  —  events overlay layer
-     7. Month view
-     8. Event chips (month view)
-     9. Event blocks (week view, absolutely positioned)
-    10. Booking modal
-    11. Toast notification
-═══════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════
+   style.css — Available Office Calendar
+   ───────────────────────────────────────────────────────────────
+   1. Design tokens
+   2. Reset & base
+   3. FullCalendar overrides
+   4. Booking modal
+   5. Autocomplete widget
+   6. Toast notification
+════════════════════════════════════════════════════════════════ */
 
 
-/* ─────────────────────────────────────────────────────────────────
-   1. DESIGN TOKENS
-   All colours and a few sizing values in one place.
-   ───────────────────────────────────────────────────────────────── */
+/* ── 1. DESIGN TOKENS ────────────────────────────────────────── */
 :root {
-  /* Blues – primary action colour */
-  --blue-50:  #E6F1FB;
-  --blue-200: #85B7EB;
-  --blue-600: #185FA5;
-  --blue-800: #0C447C;
-
-  /* Purples – second event colour */
+  --blue-50:    #E6F1FB;
+  --blue-600:   #185FA5;
+  --blue-800:   #0C447C;
   --purple-50:  #EEEDFE;
   --purple-600: #534AB7;
-  --purple-800: #3C3489;
-
-  /* Greys – UI chrome */
-  --gray-50:  #F1EFE8;
-  --gray-100: #D3D1C7;
-  --gray-200: #B4B2A9;
-  --gray-400: #888780;
-  --gray-600: #5F5E5A;
-  --gray-800: #444441;
-
-  /* Teal – third event colour, success state */
-  --teal-50:  #E1F5EE;
-  --teal-600: #0F6E56;
-  --teal-800: #085041;
-
-  /* Coral – error / warning state */
-  --coral-600: #993C1D;
-
-  /* Calendar geometry */
-  --hour-height: 48px;   /* px height of one hour row in the week grid  */
-  --time-col-w:  52px;   /* px width of the left time-label column       */
-  --day-start:   6;      /* first visible hour (6 = 06:00)               */
-  --day-end:     20;     /* last  visible hour (20 = 20:00)              */
-  /* Derived: total grid body height = (--day-end - --day-start) × --hour-height */
-  --grid-body-height: calc((var(--day-end) - var(--day-start)) * var(--hour-height)); /* 672px */
+  --teal-50:    #E1F5EE;
+  --teal-600:   #0F6E56;
+  --gray-50:    #F1EFE8;
+  --gray-100:   #D3D1C7;
+  --gray-200:   #B4B2A9;
+  --gray-400:   #888780;
+  --gray-600:   #5F5E5A;
+  --gray-800:   #444441;
+  --coral-600:  #993C1D;
 }
 
 
-/* ─────────────────────────────────────────────────────────────────
-   2. RESET & BASE
-   ───────────────────────────────────────────────────────────────── */
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+/* ── 2. RESET & BASE ─────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
   font-family: system-ui, -apple-system, sans-serif;
   background: #f8f7f4;
   color: #2c2c2a;
-  min-height: 100vh;
-}
-
-
-/* ─────────────────────────────────────────────────────────────────
-   3. HEADER
-   ───────────────────────────────────────────────────────────────── */
-header {
-  background: white;
-  border-bottom: 0.5px solid var(--gray-100);
-  padding: 14px 24px;
+  height: 100vh;
   display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
+  flex-direction: column;
 }
 
-header h1 {
-  font-size: 17px;
+#calendar {
+  flex: 1;
+  padding: 16px 20px;
+  min-height: 0; /* allow flex shrink */
+}
+
+
+/* ── 3. FULLCALENDAR OVERRIDES ───────────────────────────────── */
+
+/* Toolbar (header with navigation + title) */
+.fc .fc-toolbar {
+  padding: 4px 0 12px;
+}
+.fc .fc-toolbar-title {
+  font-size: 16px;
   font-weight: 500;
   color: var(--gray-800);
 }
-
-/* Pushes nav controls to the right */
-.header-spacer { flex: 1; }
-
-/* Prev / Next arrow buttons */
-.nav-btn {
+.fc .fc-button {
   background: white;
   border: 0.5px solid var(--gray-200);
-  border-radius: 8px;
-  padding: 7px 12px;
-  cursor: pointer;
-  font-size: 13px;
   color: var(--gray-600);
-}
-.nav-btn:hover { background: var(--gray-50); }
-
-/* Current period label between the arrows */
-#period-label {
-  font-size: 15px;
-  font-weight: 500;
-  min-width: 200px;
-  text-align: center;
-}
-
-/* "Today" shortcut button */
-#today-btn {
-  background: white;
-  border: 0.5px solid var(--gray-200);
-  border-radius: 8px;
-  padding: 7px 14px;
-  cursor: pointer;
+  border-radius: 6px;
   font-size: 13px;
+  padding: 5px 12px;
+  box-shadow: none;
+  transition: background 0.15s;
+}
+.fc .fc-button:hover,
+.fc .fc-button:focus {
+  background: var(--gray-50);
+  border-color: var(--gray-200);
+  color: var(--gray-800);
+  box-shadow: none;
+}
+.fc .fc-button-primary:not(:disabled).fc-button-active {
+  background: var(--blue-600);
+  border-color: var(--blue-600);
+  color: white;
+}
+.fc .fc-today-button {
   color: var(--blue-600);
   font-weight: 500;
 }
 
-/* Live sync status text */
-.status {
+/* Grid */
+.fc .fc-col-header-cell {
+  background: var(--gray-50);
   font-size: 12px;
+  font-weight: 500;
+  color: var(--gray-600);
+  padding: 8px 0;
+}
+.fc .fc-col-header-cell.fc-day-today {
+  background: var(--blue-50);
+  color: var(--blue-600);
+}
+.fc .fc-timegrid-slot {
+  height: 40px;
+  font-size: 11px;
   color: var(--gray-400);
 }
-
-
-/* ─────────────────────────────────────────────────────────────────
-   4. CALENDAR CONTAINER
-   ───────────────────────────────────────────────────────────────── */
-#calendar {
-  padding: 20px 24px;
+.fc .fc-timegrid-col.fc-day-today {
+  background: rgba(24, 95, 165, 0.03);
 }
-
-
-/* ─────────────────────────────────────────────────────────────────
-   5. WEEK VIEW — GRID STRUCTURE
-   The grid has (1 + 7) columns: time labels + one per weekday.
-   Rows alternate between header cells and hour slots.
-   ───────────────────────────────────────────────────────────────── */
-
-/* Outer wrapper needed to stack the events overlay on top */
-.week-wrapper {
-  position: relative;
-}
-
-/* The background grid (lines + time labels) */
-.week-grid {
-  display: grid;
-  grid-template-columns: var(--time-col-w) repeat(7, 1fr);
-  border: 0.5px solid var(--gray-100);
+.fc .fc-scrollgrid {
+  border-color: var(--gray-100);
   border-radius: 10px;
   overflow: hidden;
   background: white;
 }
-
-/* Day-name header cells (Mon, Tue …) */
-.week-header-cell {
-  background: var(--gray-50);
-  border-bottom: 0.5px solid var(--gray-100);
-  padding: 10px 6px;
-  text-align: center;
-  font-size: 12px;
-  color: var(--gray-600);
-}
-.week-header-cell.today-col {
-  background: var(--blue-50);
-  color: var(--blue-600);
-  font-weight: 500;
+.fc .fc-scrollgrid td,
+.fc .fc-scrollgrid th {
+  border-color: var(--gray-100);
 }
 
-/* Large date number inside the header cell */
-.week-header-cell span.day-num {
-  display: block;
-  font-size: 18px;
-  font-weight: 500;
-  color: var(--gray-800);
-  margin-top: 2px;
-}
-.week-header-cell.today-col span.day-num {
-  color: var(--blue-600);
-}
-
-/* Left column: time labels */
-.time-col {
-  border-right: 0.5px solid var(--gray-100);
-}
-
-/* Each time label cell */
-.time-slot {
-  height: var(--hour-height);
-  border-bottom: 0.5px solid var(--gray-50);
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
-  padding: 2px 6px 0 0;
-  font-size: 11px;
-  color: var(--gray-400);
-}
-
-/* Day body cells (one per hour per day, purely visual) */
-.day-col {
-  border-right: 0.5px solid var(--gray-100);
-  position: relative;
-}
-.day-col:last-child { border-right: none; }
-.day-col.today-col  { background: #fafcff; }
-
-.hour-row {
-  height: var(--hour-height);
-  border-bottom: 0.5px solid var(--gray-50);
-}
-
-
-/* ─────────────────────────────────────────────────────────────────
-   6. WEEK VIEW — EVENTS OVERLAY LAYER
-   A separate absolutely-positioned grid that sits exactly on top of
-   the background grid.  pointer-events are off on the container and
-   back on for each day column, so the grid lines remain interactive.
-   ───────────────────────────────────────────────────────────────── */
-
-/* Matches the grid column layout exactly */
-.week-events-layer {
-  display: grid;
-  grid-template-columns: var(--time-col-w) repeat(7, 1fr);
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  pointer-events: none; /* clicks fall through to the grid by default */
-}
-
-/* Spacer inside the overlay that skips past the header row.
-   Its height is set dynamically by JS after the header renders. */
-.week-events-layer-spacer {
-  height: 56px; /* overridden by JS — kept as a safe fallback */
-}
-
-/* Per-day event container — fills exactly the visible hour range */
-.week-day-events {
-  position: relative;
-  height: var(--grid-body-height); /* 672px for 06:00–20:00 */
-  pointer-events: all;             /* re-enable clicks on events */
-}
-
-
-/* ─────────────────────────────────────────────────────────────────
-   8. EVENT CHIPS  (month view — kept for reference, unused)
-   Small inline pill for each event inside a month cell.
-   Three colour variants cycle by event index (0 → blue, 1 → purple,
-   2 → teal, then wraps around).
-   ───────────────────────────────────────────────────────────────── */
-.event-chip {
+/* Events — three colour variants cycling by index */
+.fc-event {
   border-radius: 4px;
-  padding: 2px 6px;
+  border-left-width: 3px;
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
-  margin-bottom: 2px;
-  display: block;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  padding: 1px 4px;
   transition: opacity 0.12s;
 }
-.event-chip:hover { opacity: 0.82; }
+.fc-event:hover { opacity: 0.82; }
 
-.event-chip.color-0 { background: var(--blue-50);   color: var(--blue-800);   border-left: 2px solid var(--blue-600);   }
-.event-chip.color-1 { background: var(--purple-50); color: var(--purple-800); border-left: 2px solid var(--purple-600); }
-.event-chip.color-2 { background: var(--teal-50);   color: var(--teal-800);   border-left: 2px solid var(--teal-600);   }
-
-
-/* ─────────────────────────────────────────────────────────────────
-   9. EVENT BLOCKS  (week view, absolutely positioned)
-   Positioned by JS: top = (startHour - DAY_START) × HOUR_HEIGHT,
-   height = duration × HOUR_HEIGHT.
-   Overlapping events are split into side-by-side columns by JS.
-   ───────────────────────────────────────────────────────────────── */
-.week-event {
-  position: absolute;
-  border-radius: 4px;
-  padding: 2px 5px;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  overflow: hidden;
-  transition: opacity 0.12s;
-  border-left: 2px solid;
+.fc-event.color-0 {
+  background: var(--blue-50)   !important;
+  border-color: var(--blue-600) !important;
+  color: var(--blue-800)       !important;
 }
-.week-event:hover { opacity: 0.82; }
+.fc-event.color-1 {
+  background: var(--purple-50)   !important;
+  border-color: var(--purple-600) !important;
+  color: #3C3489                 !important;
+}
+.fc-event.color-2 {
+  background: var(--teal-50)   !important;
+  border-color: var(--teal-600) !important;
+  color: #085041               !important;
+}
 
-.week-event.color-0 { background: var(--blue-50);   color: var(--blue-800);   border-color: var(--blue-600);   }
-.week-event.color-1 { background: var(--purple-50); color: var(--purple-800); border-color: var(--purple-600); }
-.week-event.color-2 { background: var(--teal-50);   color: var(--teal-800);   border-color: var(--teal-600);   }
 
-
-/* ─────────────────────────────────────────────────────────────────
-   10. BOOKING MODAL
-   ───────────────────────────────────────────────────────────────── */
-
-/* Semi-transparent backdrop */
+/* ── 4. BOOKING MODAL ────────────────────────────────────────── */
 .modal-bg {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(0,0,0,0.35);
   z-index: 1000;
   align-items: center;
   justify-content: center;
 }
 .modal-bg.open { display: flex; }
 
-/* Modal card */
 .modal {
   background: white;
   border-radius: 12px;
@@ -329,7 +165,6 @@ header h1 {
   max-width: 94vw;
   overflow: hidden;
 }
-
 .modal-header {
   padding: 18px 20px 14px;
   border-bottom: 0.5px solid var(--gray-100);
@@ -339,7 +174,6 @@ header h1 {
 
 .modal-body { padding: 16px 20px; }
 
-/* Summary row: date / hours / period displayed side-by-side */
 .modal-info {
   display: flex;
   gap: 18px;
@@ -350,7 +184,6 @@ header h1 {
 .modal-info-item        { font-size: 12px; color: var(--gray-600); }
 .modal-info-item strong { display: block; font-size: 13px; color: var(--gray-800); margin-top: 2px; }
 
-/* Form field rows */
 .modal-field              { margin-bottom: 14px; }
 .modal-field label        { display: block; font-size: 12px; color: var(--gray-600); margin-bottom: 5px; }
 .modal-field select {
@@ -364,7 +197,6 @@ header h1 {
 }
 .modal-field select:focus { outline: none; border-color: var(--blue-600); }
 
-/* Coloured badge showing the auto-detected period */
 .period-badge {
   display: inline-block;
   background: var(--blue-50);
@@ -384,7 +216,6 @@ header h1 {
   justify-content: flex-end;
 }
 
-/* Shared button base */
 .btn-primary {
   background: var(--blue-600);
   color: white;
@@ -409,19 +240,9 @@ header h1 {
 }
 
 
-/* ─────────────────────────────────────────────────────────────────
-   10b. AUTOCOMPLETE WIDGET  (Who are you? field)
-   A text input + floating suggestion list that replaces the native
-   <select> for the people dropdown. Filters on every keystroke,
-   matching anywhere in the name (first name, surname, or both).
-   ───────────────────────────────────────────────────────────────── */
+/* ── 5. AUTOCOMPLETE ─────────────────────────────────────────── */
+.autocomplete-wrapper { position: relative; }
 
-/* Wrapper — provides the anchor for the absolutely-positioned list */
-.autocomplete-wrapper {
-  position: relative;
-}
-
-/* The visible text input — styled to match the select fields */
 .autocomplete-input {
   width: 100%;
   border: 0.5px solid var(--gray-200);
@@ -433,22 +254,14 @@ header h1 {
   outline: none;
   transition: border-color 0.15s;
 }
-.autocomplete-input:focus {
-  border-color: var(--blue-600);
-}
-/* Green border when a valid name is confirmed */
-.autocomplete-input.confirmed {
-  border-color: var(--teal-600);
-  background: var(--teal-50);
-}
+.autocomplete-input:focus    { border-color: var(--blue-600); }
+.autocomplete-input.confirmed { border-color: var(--teal-600); background: var(--teal-50); }
 
-/* Floating suggestion list */
 .autocomplete-list {
-  display: none;           /* shown by JS when there are results */
+  display: none;
   position: absolute;
   top: calc(100% + 4px);
-  left: 0;
-  right: 0;
+  left: 0; right: 0;
   background: white;
   border: 0.5px solid var(--gray-200);
   border-radius: 6px;
@@ -458,13 +271,9 @@ header h1 {
   z-index: 1100;
   list-style: none;
   padding: 4px 0;
-  margin: 0;
 }
-.autocomplete-list.open {
-  display: block;
-}
+.autocomplete-list.open { display: block; }
 
-/* Individual suggestion item */
 .autocomplete-list li {
   padding: 8px 12px;
   font-size: 13px;
@@ -473,26 +282,19 @@ header h1 {
   transition: background 0.1s;
 }
 .autocomplete-list li:hover,
-.autocomplete-list li.active {
-  background: var(--blue-50);
-  color: var(--blue-800);
-}
+.autocomplete-list li.active { background: var(--blue-50); color: var(--blue-800); }
 
-/* Highlighted matched portion of the name */
 .autocomplete-list li mark {
   background: none;
   color: var(--blue-600);
   font-weight: 600;
 }
 
-/* ─────────────────────────────────────────────────────────────────
-   11. TOAST NOTIFICATION
-   Slides in from bottom-right for 2.8 s then fades out.
-   ───────────────────────────────────────────────────────────────── */
+
+/* ── 6. TOAST ────────────────────────────────────────────────── */
 .toast {
   position: fixed;
-  bottom: 24px;
-  right: 24px;
+  bottom: 24px; right: 24px;
   background: var(--gray-800);
   color: white;
   padding: 10px 18px;
