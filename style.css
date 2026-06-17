@@ -8,9 +8,11 @@
      4. Calendar container
      5. Week view  —  grid, time column, day columns
      6. Week view  —  events overlay layer
-     7. Event blocks (week view, absolutely positioned)
-     8. Booking modal
-     9. Toast notification
+     7. Month view
+     8. Event chips (month view)
+     9. Event blocks (week view, absolutely positioned)
+    10. Booking modal
+    11. Toast notification
 ═══════════════════════════════════════════════════════════════════ */
 
 
@@ -252,6 +254,31 @@ header h1 {
   pointer-events: all;             /* re-enable clicks on events */
 }
 
+
+/* ─────────────────────────────────────────────────────────────────
+   8. EVENT CHIPS  (month view — kept for reference, unused)
+   Small inline pill for each event inside a month cell.
+   Three colour variants cycle by event index (0 → blue, 1 → purple,
+   2 → teal, then wraps around).
+   ───────────────────────────────────────────────────────────────── */
+.event-chip {
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-bottom: 2px;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity 0.12s;
+}
+.event-chip:hover { opacity: 0.82; }
+
+.event-chip.color-0 { background: var(--blue-50);   color: var(--blue-800);   border-left: 2px solid var(--blue-600);   }
+.event-chip.color-1 { background: var(--purple-50); color: var(--purple-800); border-left: 2px solid var(--purple-600); }
+.event-chip.color-2 { background: var(--teal-50);   color: var(--teal-800);   border-left: 2px solid var(--teal-600);   }
 
 
 /* ─────────────────────────────────────────────────────────────────

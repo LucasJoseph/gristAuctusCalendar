@@ -1,46 +1,42 @@
 /**
- * app.js  —  Grist Calendar
+ * app.js  —  Grist Calendar (Custom Widget)
  * ─────────────────────────────────────────────────────────────────
- * Fetches events from a Grist document, renders an interactive
- * week calendar, and writes booking records back to Grist
- * when the user confirms a spot.
+ * Runs inside Grist as a Custom Widget.
+ * Data is injected by the Grist plugin API — no fetch() calls,
+ * no API key, no CORS issues.
+ *
+ * Required Grist setup:
+ *   • Add widget to page, set data source to the Calendar table
+ *   • Grant "Full document access" when Grist prompts
  *
  * Sections:
- *   1. Configuration  — Grist API endpoints, table/column names
+ *   1. Configuration  — table & column names only (no URLs/keys)
  *   2. State          — runtime variables
  *   3. Date helpers   — parsing, formatting, comparison
  *   4. Period helpers — classify event as Morning / Afternoon / All day
  *   5. Text helpers   — parse available names from calendar_text
- *   6. Render entry   — setView, navigate, goToday, render
+ *   6. Navigation & Render
  *   7. Week view      — renderWeek, overlap layout algorithm
+ *   8b. Autocomplete  — "Who are you?" field
  *   9. Modal          — openModal, closeModal, confirmEvent
- *  10. Grist API      — fetchPeople, loadEvents
+ *  10. Grist Plugin API — onRecords, write booking
  *  11. UI helpers     — showToast
- *  12. Bootstrap      — auto-load on page open
+ *  12. Bootstrap      — grist.ready()
  */
 
 
 /* ═══════════════════════════════════════════════════════════════
    1. CONFIGURATION
    ─────────────────────────────────────────────────────────────
-   All Grist-specific settings are centralised here so you never
-   have to hunt through the logic to change an endpoint or a
-   column name.
+   Only table and column names live here.
+   No API keys or URLs — the Grist plugin API handles all of that.
 ════════════════════════════════════════════════════════════════ */
 const CONFIG = {
-  /** Base URL of the Grist REST API for this document.
-   *  Format: https://<host>/api/docs/<docId>  */
-  apiBase: 'https://grist.numerique.gouv.fr/api/docs/cESjfoc8fpo4ZDUZ18kFHm',
-
-  /** API key with at least Editor access (needed for POST to Getting_available_place).
-   *  Replace with your own key from Grist → Profile → API Key. */
-  apiKey: '',
-
   /** Grist table IDs (case-sensitive, as shown in the Grist URL) */
   tables: {
-    calendar:         'Calendar',             // source: events to display
-    people:           'People',               // source: list of staff names
-    bookings:         'Getting_available_place', // target: booking records
+    calendar: 'Calendar',                  // source: events to display
+    people:   'People',                    // source: list of staff names
+    bookings: 'Getting_available_place',   // target: booking records
   },
 
   /** Column IDs inside the Calendar table */
@@ -53,10 +49,10 @@ const CONFIG = {
 
   /** Column IDs inside the Getting_available_place table */
   bookingCols: {
-    date:             'date',
-    personAvailable:  'people_available_place',
-    personTaking:     'people_taking_the_place',
-    period:           'Period',
+    date:            'date',
+    personAvailable: 'people_available_place',
+    personTaking:    'people_taking_the_place',
+    period:          'Period',
   },
 
   /** Visible hour range for the week view (inclusive start, exclusive end) */
@@ -65,9 +61,6 @@ const CONFIG = {
 
   /** Height in pixels of one hour row — must match --hour-height in CSS */
   hourHeight: 48,
-
-  /** How often (ms) to silently refresh events after the initial load */
-  refreshInterval: 5000,
 };
 
 
@@ -75,12 +68,11 @@ const CONFIG = {
    2. STATE
    Runtime variables shared across rendering and modal functions.
 ════════════════════════════════════════════════════════════════ */
-let currentView  = 'week'; 
-let currentDate  = new Date();
-let events       = [];       // array of normalised event objects
-let people       = [];       // array of name strings from the People table
-let selectedEvent = null;    // event object currently shown in the modal
-let autoRefreshTimer = null; // setInterval handle
+let currentView   = 'week';
+let currentDate   = new Date();
+let events        = [];   // normalised event objects (from Calendar table)
+let people        = [];   // name strings (from People table)
+let selectedEvent = null; // event currently shown in the modal
 
 
 /* ═══════════════════════════════════════════════════════════════
@@ -653,14 +645,14 @@ function closeModal(e) {
 }
 
 /**
- * POST a booking record to Grist, then silently refresh events.
- * Fields written: date, people_available_place,
- *                 people_taking_the_place, Period.
+ * Write a booking record to Grist via the plugin API, then close
+ * the modal. The calendar refreshes automatically because Grist
+ * will re-trigger onRecords() after any table change.
  */
 async function confirmEvent() {
   if (!selectedEvent) return;
 
-  const whoIAm    = document.getElementById('modal-who-i-am').value.trim();
+  const whoIAm     = document.getElementById('modal-who-i-am').value.trim();
   const whosePlace = document.getElementById('modal-whose-place').value;
 
   if (!whoIAm)     { showToast('Please select who you are', 'error'); return; }
@@ -670,36 +662,28 @@ async function confirmEvent() {
   btn.classList.add('loading');
   btn.textContent = 'Saving…';
 
-  const url    = `${CONFIG.apiBase}/tables/${CONFIG.tables.bookings}/records`;
   const ed     = parseEventDate(selectedEvent._date);
   const period = document.getElementById('modal-period-select').value
                || getPeriod(selectedEvent);
 
-  const payload = {
-    records: [{
-      fields: {
+  try {
+    /**
+     * grist.docApi.applyUserActions() sends a list of Grist "user actions".
+     * The AddRecord action takes: [tableName, rowId, fields]
+     * rowId = null means "insert new row".
+     */
+    await grist.docApi.applyUserActions([
+      ['AddRecord', CONFIG.tables.bookings, null, {
         [CONFIG.bookingCols.date]:            ed ? ed.toISOString().slice(0, 10) : '',
         [CONFIG.bookingCols.personAvailable]: whosePlace,
         [CONFIG.bookingCols.personTaking]:    whoIAm,
         [CONFIG.bookingCols.period]:          period,
-      }
-    }]
-  };
-
-  try {
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      }]
+    ]);
 
     showToast('Spot booked!', 'success');
     document.getElementById('modal-bg').classList.remove('open');
     selectedEvent = null;
-    await loadEvents(true);
 
   } catch (err) {
     showToast('Error: ' + err.message, 'error');
@@ -711,92 +695,55 @@ async function confirmEvent() {
 
 
 /* ═══════════════════════════════════════════════════════════════
-   10. GRIST API
+   10. GRIST PLUGIN API
+   ─────────────────────────────────────────────────────────────
+   All data flows through the Grist plugin API:
+     • grist.onRecords()    — called whenever Calendar data changes
+     • grist.docApi.fetchTable() — one-time fetch of the People table
+     • grist.docApi.applyUserActions() — write booking (in confirmEvent)
+   No fetch(), no API key, no CORS issues.
 ════════════════════════════════════════════════════════════════ */
 
 /**
- * Fetch all records from the People table and populate people[].
- * Column auto-detection: picks the first non-manualSort string column.
- * @param {Object} headers  Fetch headers (must include Authorization)
+ * Normalise a raw Grist records object (columnar format) into the
+ * array of event objects the rest of the app expects.
+ *
+ * Grist onRecords delivers data in columnar format:
+ *   { id: [1,2,3], fields: { date: [...], calendar_text: [...], ... } }
+ * We transpose that into row objects.
+ *
+ * @param {object} data  Raw Grist table data
+ * @returns {Array}      Normalised event array
  */
-async function fetchPeople() {
-  const url = `${CONFIG.apiBase}/tables/${CONFIG.tables.people}/records`;
-
-  try {
-    const resp = await fetch(url);
-
-    if (!resp.ok) {
-      document.getElementById('status-msg').textContent =
-        `✗ People table not found (${resp.status})`;
-      return;
-    }
-
-    const data = await resp.json();
-
-    people = (data.records || []).map(r => {
-      const fields = r.fields;
-
-      const nameCol = Object.keys(fields).find(
-        k => k !== 'manualSort' &&
-             typeof fields[k] === 'string' &&
-             fields[k].trim() !== ''
-      ) || Object.keys(fields).find(k => k !== 'manualSort');
-
-      return nameCol ? String(fields[nameCol] || '').trim() : '';
-    }).filter(Boolean);
-
-  } catch (e) {
-    console.error(e);
-  }
+function normaliseRecords(data) {
+  const ids  = data.id  || [];
+  const cols = data.fields || {};
+  return ids.map((id, i) => ({
+    _id:    id,
+    _date:  (cols[CONFIG.calendarCols.date]  || [])[i] ?? null,
+    _text:  (cols[CONFIG.calendarCols.text]  || [])[i] ?? '',
+    _start: (cols[CONFIG.calendarCols.start] || [])[i] ?? null,
+    _end:   (cols[CONFIG.calendarCols.end]   || [])[i] ?? null,
+  })).filter(e => e._text && e._text.trim() !== '');
 }
 
 /**
- * Load (or reload) events from the Calendar table.
- * On the first successful load, starts the auto-refresh timer.
- *
- * @param {boolean} silent  If true, skip loading indicator updates.
- *                          Used by the auto-refresh timer so the UI
- *                          doesn't flicker every 5 seconds.
+ * Fetch the People table once and populate the people[] array.
+ * Uses docApi.fetchTable() which returns data in the same columnar
+ * format as onRecords.
  */
-async function loadEvents(silent = false) {
-  const status  = document.getElementById('status-msg');
-  const url     = `${CONFIG.apiBase}/tables/${CONFIG.tables.calendar}/records`;
-  const headers = { 'Authorization': `Bearer ${CONFIG.apiKey}` };
-  if (!silent) status.textContent = 'Loading…';
-
+async function fetchPeople() {
   try {
-    // Fetch events and people in parallel
-    const [resp] = await Promise.all([
-      fetch(url),
-      fetchPeople(),
-    ]);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-
-    const data = await resp.json();
-
-    // Normalise records, skip rows with no text
-    events = (data.records || [])
-      .map(r => ({
-        _id:    r.id,
-        _date:  r.fields[CONFIG.calendarCols.date]  ?? null,
-        _text:  r.fields[CONFIG.calendarCols.text]  ?? '',
-        _start: r.fields[CONFIG.calendarCols.start] ?? null,
-        _end:   r.fields[CONFIG.calendarCols.end]   ?? null,
-      }))
-      .filter(e => e._text && e._text.trim() !== '');
-
-    const now = new Date().toLocaleTimeString('en-GB', {
-      hour: '2-digit', minute: '2-digit', second: '2-digit'
-    });
-    status.textContent = `✓ ${events.length} event(s) — updated ${now}`;
-    render();
-
-    // Start auto-refresh after the first successful load
-    if (!autoRefreshTimer) {
-      autoRefreshTimer = setInterval(() => loadEvents(true), CONFIG.refreshInterval);
-    }
-  } catch (err) {
-    if (!silent) status.textContent = `✗ ${err.message}`;
+    const data = await grist.docApi.fetchTable(CONFIG.tables.people);
+    // Pick the first non-manualSort string column as the name column
+    const colKeys = Object.keys(data).filter(k => k !== 'manualSort' && k !== 'id');
+    const nameCol = colKeys.find(k => (data[k] || []).some(v => typeof v === 'string' && v.trim()))
+                 || colKeys[0];
+    people = nameCol
+      ? (data[nameCol] || []).map(v => String(v || '').trim()).filter(Boolean)
+      : [];
+  } catch (e) {
+    document.getElementById('status-msg').textContent = '✗ Could not load People table';
   }
 }
 
@@ -820,8 +767,50 @@ function showToast(msg, type = '') {
 
 /* ═══════════════════════════════════════════════════════════════
    12. BOOTSTRAP
-   Render the empty calendar immediately so the layout is visible,
-   then kick off the first data fetch.
+   ─────────────────────────────────────────────────────────────
+   1. Render an empty calendar immediately so the layout is visible.
+   2. Tell Grist the widget is ready and request full document access
+      (needed to read People and write to Getting_available_place).
+   3. grist.onRecords() fires immediately with current data, then
+      again whenever the Calendar table changes — no polling needed.
+   4. Fetch People once on startup (it changes rarely).
 ════════════════════════════════════════════════════════════════ */
+
+// Show the skeleton layout before data arrives
 render();
-loadEvents();
+
+// Tell Grist we are ready and declare our access requirements
+grist.ready({
+  requiredAccess: 'full',   // needed to read other tables + write bookings
+  columns: [
+    { name: 'date',           title: 'Date',       type: 'Date'     },
+    { name: 'calendar_text',  title: 'Text',       type: 'Text'     },
+    { name: 'start',          title: 'Start time', type: 'DateTime' },
+    { name: 'end',            title: 'End time',   type: 'DateTime' },
+  ],
+});
+
+/**
+ * grist.onRecords() is called:
+ *   - immediately after grist.ready() with the current table data
+ *   - again whenever any row in the linked Calendar table changes
+ * This replaces the 5-second polling interval entirely.
+ *
+ * @param {object} records  Columnar table data from Grist
+ */
+grist.onRecords(async (records) => {
+  const status = document.getElementById('status-msg');
+  try {
+    events = normaliseRecords(records);
+    const now = new Date().toLocaleTimeString('en-GB', {
+      hour: '2-digit', minute: '2-digit', second: '2-digit'
+    });
+    status.textContent = `✓ ${events.length} event(s) — updated ${now}`;
+    render();
+  } catch (err) {
+    status.textContent = `✗ ${err.message}`;
+  }
+});
+
+// Load People once on startup (re-fetch on page reload if needed)
+fetchPeople();

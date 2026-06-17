@@ -1,18 +1,22 @@
-# All available Hugo versions are listed here: https://gitlab.com/pages/hugo/container_registry
-default:
-  tags:
-  - ci.inria.fr 
-image: 
-  name: registry.gitlab.com/pages/hugo/hugo_extended:latest
-  entrypoint: [""]
+# .gitlab-ci.yml — Grist Calendar Widget
+# ─────────────────────────────────────────────────────────────────
+# Deploys index.html, app.js and style.css to GitLab Pages.
+# The widget will be available at:
+#   https://<namespace>.gitlab.<your-institute>.fr/<repo-name>/
+#
+# No build step needed — pure static files.
+# ─────────────────────────────────────────────────────────────────
 
 pages:
   stage: deploy
   script:
+    # GitLab Pages serves from the "public/" folder.
+    # We just copy our 3 files there.
     - mkdir -p public
-    - cp index.html app.js style.css public
+    - cp index.html app.js style.css public/
   artifacts:
     paths:
       - public
-  only:
-      - master
+  # Only deploy from the main branch
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
