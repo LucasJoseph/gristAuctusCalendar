@@ -44,7 +44,15 @@ body {
 #calendar {
   flex: 1;
   padding: 16px 20px;
-  min-height: 0; /* allow flex shrink */
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Force FullCalendar to fill the available height exactly */
+.fc,
+.fc-view-harness,
+.fc-view-harness-active {
+  height: 100% !important;
 }
 
 
@@ -129,21 +137,18 @@ body {
 }
 .fc-event:hover { opacity: 0.82; }
 
-.fc-event.color-0 {
-  background: var(--blue-50)   !important;
-  border-color: var(--blue-600) !important;
-  color: var(--blue-800)       !important;
-}
-.fc-event.color-1 {
-  background: var(--purple-50)   !important;
-  border-color: var(--purple-600) !important;
-  color: #3C3489                 !important;
-}
-.fc-event.color-2 {
-  background: var(--teal-50)   !important;
-  border-color: var(--teal-600) !important;
-  color: #085041               !important;
-}
+/* Override FullCalendar's default white text */
+.fc-event .fc-event-title,
+.fc-event .fc-event-time,
+.fc-timegrid-event .fc-event-title,
+.fc-timegrid-event .fc-event-time { color: inherit !important; }
+
+.fc-event.color-0,
+.fc-event.color-0 .fc-event-main { background: var(--blue-50)   !important; border-color: var(--blue-600) !important; color: var(--blue-800) !important; }
+.fc-event.color-1,
+.fc-event.color-1 .fc-event-main { background: var(--purple-50) !important; border-color: var(--purple-600) !important; color: #3C3489 !important; }
+.fc-event.color-2,
+.fc-event.color-2 .fc-event-main { background: var(--teal-50)   !important; border-color: var(--teal-600) !important; color: #085041 !important; }
 
 
 /* ── 4. BOOKING MODAL ────────────────────────────────────────── */
