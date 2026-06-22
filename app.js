@@ -152,7 +152,7 @@ function getBookingsForEvent(ev) {
     );
     if (!sameDay) return false;
     if (period === 'All day') return true;          // show all sub-periods
-    return b.period === period || b.period === 'All day';
+    return b.period === period;                      // Morning/Afternoon: exact match only
   });
 }
 
@@ -277,6 +277,7 @@ function buildEventContent(info) {
   let html = '<div class="fc-event-content-inner">';
 
   // ── Summary count line ────────────────────────────────────────
+  const totalSpots = available.length || taken.length; // fallback when _text empty
   html += `<div class="ev-summary">${free.length} free · ${taken.length} taken</div>`;
 
   // ── Free places — one per line ────────────────────────────────
@@ -284,8 +285,8 @@ function buildEventContent(info) {
     free.forEach(name => {
       html += `<div class="ev-free">🟢 ${name}</div>`;
     });
-  } else if (available.length) {
-    html += `<div class="ev-free ev-full">No spots left</div>`;
+  } else {
+    html += `<div class="ev-free ev-full">🔴 Full</div>`;
   }
 
   // ── Taken places — one per line ───────────────────────────────
@@ -508,7 +509,7 @@ function normaliseRecords(data) {
     _text:  String((data[CONFIG.calendarCols.text]  || [])[i] ?? ''),
     _start: (data[CONFIG.calendarCols.start] || [])[i] ?? null,
     _end:   (data[CONFIG.calendarCols.end]   || [])[i] ?? null,
-  })).filter(e => e._text && e._text !== 'undefined' && e._text.trim() !== '');
+  })).filter(e => e._date !== null); // keep all events; empty _text = all spots taken
 }
 
 /** Build {id, name}[] from a Grist table (for Reference column writes) */
