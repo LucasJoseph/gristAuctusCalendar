@@ -295,6 +295,39 @@ body {
 }
 
 
+/* ── 4c. MODAL AVAILABILITY SUMMARY ─────────────────────────── */
+
+.modal-availability {
+  background: var(--bg-header, #f8f7f4);
+  border: 0.5px solid var(--border, #D3D1C7);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.modal-avail-count {
+  font-weight: 600;
+  font-size: 12px;
+  margin-bottom: 4px;
+  color: var(--text, #2c2c2a);
+}
+
+.modal-avail-free  { color: var(--text, #2c2c2a); }
+.modal-avail-taken { color: var(--text, #2c2c2a); opacity: 0.85; }
+
+.modal-avail-divider {
+  border-top: 0.5px solid var(--border, #D3D1C7);
+  margin: 6px 0;
+}
+
+.modal-avail-period {
+  font-size: 11px;
+  opacity: 0.65;
+}
+
+
 /* ── 5b. EVENT CONTENT ──────────────────────────────────────── */
 
 .fc-event-content-inner {

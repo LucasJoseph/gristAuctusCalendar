@@ -399,15 +399,39 @@ function openModal(ev) {
   const period = getPeriod(ev);
   const allDay = isAllDayEvent(ev);
 
-  document.getElementById('modal-title').textContent  = getPeriod(ev);
+  document.getElementById('modal-title').textContent  = period;
   document.getElementById('modal-date').textContent   = ed ? fmtDate(ed) : '—';
   document.getElementById('modal-hours').textContent  = st ? st.str + (en ? ' → ' + en.str : '') : '—';
   document.getElementById('modal-period').textContent = period;
 
-  // Populate "Which spot?" from calendar_text
+  // ── Availability summary ──────────────────────────────────────
+  const available  = parseAvailablePlaces(ev._text);
+  const taken      = getBookingsForEvent(ev);
+  const takenNames = taken.map(b => b.personAvailable.toLowerCase());
+  const free       = available.filter(n => !takenNames.includes(n.toLowerCase()));
+
+  const summaryEl = document.getElementById('modal-availability');
+  let summaryHtml = `<div class="modal-avail-count">${free.length} free · ${taken.length} taken</div>`;
+
+  if (free.length) {
+    free.forEach(name => {
+      summaryHtml += `<div class="modal-avail-free">🟢 ${name}</div>`;
+    });
+  }
+  if (taken.length) {
+    if (free.length) summaryHtml += '<div class="modal-avail-divider"></div>';
+    taken.forEach(b => {
+      const label = b.period && b.period !== period
+        ? ` <span class="modal-avail-period">(${b.period})</span>` : '';
+      summaryHtml += `<div class="modal-avail-taken">🔴 ${b.personAvailable} → ${b.personTaking}${label}</div>`;
+    });
+  }
+  summaryEl.innerHTML = summaryHtml;
+
+  // ── "Which spot?" dropdown — only free places ─────────────────
   const placeSelect = document.getElementById('modal-whose-place');
   placeSelect.innerHTML = '<option value="">— Select —</option>';
-  parseAvailablePlaces(ev._text).forEach(name => {
+  free.forEach(name => {
     const match = availablePeople.find(p => p.name.toLowerCase() === name.toLowerCase());
     const opt = document.createElement('option');
     opt.value       = match ? match.id : name;
