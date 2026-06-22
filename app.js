@@ -265,32 +265,35 @@ function updateCalendarEvents() {
  * Must return a { html: string } object.
  */
 function buildEventContent(info) {
-  const ev       = info.event.extendedProps.gristEvent;
+  const ev        = info.event.extendedProps.gristEvent;
   const available = parseAvailablePlaces(ev._text);
   const taken     = getBookingsForEvent(ev);
+  const period    = getPeriod(ev);
 
   // Names still free = available minus those already booked
   const takenNames = taken.map(b => b.personAvailable.toLowerCase());
   const free = available.filter(n => !takenNames.includes(n.toLowerCase()));
 
-  const period = getPeriod(ev);
-
   let html = '<div class="fc-event-content-inner">';
 
-  // ── Free places ──────────────────────────────────────────────
+  // ── Summary count line ────────────────────────────────────────
+  html += `<div class="ev-summary">${free.length} free · ${taken.length} taken</div>`;
+
+  // ── Free places — one per line ────────────────────────────────
   if (free.length) {
-    html += `<div class="ev-free">🟢 ${free.join(', ')}</div>`;
+    free.forEach(name => {
+      html += `<div class="ev-free">🟢 ${name}</div>`;
+    });
   } else if (available.length) {
     html += `<div class="ev-free ev-full">No spots left</div>`;
   }
 
-  // ── Taken places ─────────────────────────────────────────────
+  // ── Taken places — one per line ───────────────────────────────
   if (taken.length) {
-    if (free.length || available.length) {
-      html += '<div class="ev-divider"></div>';
-    }
+    html += '<div class="ev-divider"></div>';
     taken.forEach(b => {
-      const label = b.period && b.period !== period ? ` <span class="ev-period">(${b.period})</span>` : '';
+      const label = b.period && b.period !== period
+        ? ` <span class="ev-period">(${b.period})</span>` : '';
       html += `<div class="ev-taken">🔴 ${b.personAvailable} → ${b.personTaking}${label}</div>`;
     });
   }
@@ -396,7 +399,7 @@ function openModal(ev) {
   const period = getPeriod(ev);
   const allDay = isAllDayEvent(ev);
 
-  document.getElementById('modal-title').textContent  = ev._text || '(no title)';
+  document.getElementById('modal-title').textContent  = getPeriod(ev);
   document.getElementById('modal-date').textContent   = ed ? fmtDate(ed) : '—';
   document.getElementById('modal-hours').textContent  = st ? st.str + (en ? ' → ' + en.str : '') : '—';
   document.getElementById('modal-period').textContent = period;
