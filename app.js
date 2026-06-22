@@ -55,6 +55,7 @@ let calendar        = null; // FullCalendar instance
 let events          = [];   // normalised event objects
 let people          = [];   // { id, name } from People table
 let availablePeople = [];   // { id, name } from Setting_available_place
+let bookings        = [];   // { date, personAvailable, personTaking, period } from Getting_available_place
 let selectedEvent   = null; // event shown in the modal
 
 
@@ -126,6 +127,36 @@ function isAllDayEvent(ev) {
 
 
 /* ═══════════════════════════════════════════════════════════════
+   4b. BOOKING LOOKUP HELPERS
+════════════════════════════════════════════════════════════════ */
+
+/**
+ * Return all bookings that match a given event's date + period.
+ * For an "All day" event we also include Morning and Afternoon bookings
+ * so the full picture is visible.
+ * @param {object} ev  normalised event object
+ * @returns {{ personAvailable, personTaking, period }[]}
+ */
+function getBookingsForEvent(ev) {
+  const ed = parseEventDate(ev._date);
+  if (!ed) return [];
+  const period = getPeriod(ev);
+
+  return bookings.filter(b => {
+    if (!b.date) return false;
+    const bd = new Date(b.date * 1000);
+    const sameDay = (
+      bd.getFullYear() === ed.getFullYear() &&
+      bd.getMonth()    === ed.getMonth()    &&
+      bd.getDate()     === ed.getDate()
+    );
+    if (!sameDay) return false;
+    if (period === 'All day') return true;          // show all sub-periods
+    return b.period === period || b.period === 'All day';
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════
    5. TEXT HELPERS
    Parses the calendar_text formula output:
      "3 places:\nAlice,\nBob,\nCarol"
@@ -181,6 +212,9 @@ function initCalendar() {
     eventClassNames(info) {
       return [`color-${info.event.extendedProps.colorIdx % 3}`];
     },
+    eventContent(info) {
+      return buildEventContent(info);
+    },
   });
   calendar.render();
 }
@@ -199,26 +233,70 @@ function updateCalendarEvents() {
     const ed = parseEventDate(ev._date);
     if (!ed || !st) return null;
 
-    // Build ISO datetime strings FullCalendar expects
-    const pad  = n => String(n).padStart(2, '0');
+    const pad     = n => String(n).padStart(2, '0');
     const dateStr = `${ed.getFullYear()}-${pad(ed.getMonth()+1)}-${pad(ed.getDate())}`;
     const start   = `${dateStr}T${st.str}:00`;
     const end     = en ? `${dateStr}T${en.str}:00` : null;
 
     return {
-      title:          ev._text || '(no title)',
+      title: ev._text || '(no title)',
       start,
       end,
-      extendedProps: {
-        gristEvent: ev,
-        colorIdx:   idx,
-      },
+      extendedProps: { gristEvent: ev, colorIdx: idx },
     };
   }).filter(Boolean);
 
-  // Replace all events in one shot — avoids flicker
   calendar.removeAllEvents();
   calendar.addEventSource(fcEvents);
+}
+
+/**
+ * Build the HTML content shown inside each calendar event block.
+ *
+ * Layout:
+ *   ┌────────────────────────────┐
+ *   │ 🟢 Alice, Bob              │  ← available places (from calendar_text)
+ *   │ ─────────────────────────  │
+ *   │ 🔴 Alice → Carol (Morning) │  ← taken: personAvailable → personTaking
+ *   │    Bob → Dave (All day)    │
+ *   └────────────────────────────┘
+ *
+ * Called by FullCalendar's eventContent hook.
+ * Must return a { html: string } object.
+ */
+function buildEventContent(info) {
+  const ev       = info.event.extendedProps.gristEvent;
+  const available = parseAvailablePlaces(ev._text);
+  const taken     = getBookingsForEvent(ev);
+
+  // Names still free = available minus those already booked
+  const takenNames = taken.map(b => b.personAvailable.toLowerCase());
+  const free = available.filter(n => !takenNames.includes(n.toLowerCase()));
+
+  const period = getPeriod(ev);
+
+  let html = '<div class="fc-event-content-inner">';
+
+  // ── Free places ──────────────────────────────────────────────
+  if (free.length) {
+    html += `<div class="ev-free">🟢 ${free.join(', ')}</div>`;
+  } else if (available.length) {
+    html += `<div class="ev-free ev-full">No spots left</div>`;
+  }
+
+  // ── Taken places ─────────────────────────────────────────────
+  if (taken.length) {
+    if (free.length || available.length) {
+      html += '<div class="ev-divider"></div>';
+    }
+    taken.forEach(b => {
+      const label = b.period && b.period !== period ? ` <span class="ev-period">(${b.period})</span>` : '';
+      html += `<div class="ev-taken">🔴 ${b.personAvailable} → ${b.personTaking}${label}</div>`;
+    });
+  }
+
+  html += '</div>';
+  return { html };
 }
 
 
@@ -421,6 +499,39 @@ async function fetchPeople() {
   } catch (e) { console.error('fetchPeople:', e); }
 }
 
+/**
+ * Fetch all booking records from Getting_available_place.
+ * Each booking has: date (Unix ts), personAvailable name,
+ * personTaking name, and period string.
+ */
+async function fetchBookings() {
+  try {
+    const data = await grist.docApi.fetchTable(CONFIG.tables.bookings);
+    const ids  = data.id || [];
+    bookings = ids.map((id, i) => ({
+      id,
+      // date stored as Unix timestamp (seconds)
+      date:            (data[CONFIG.bookingCols.date]            || [])[i] ?? null,
+      // Reference columns return row IDs — resolve to names
+      personAvailable: resolveRef(data[CONFIG.bookingCols.personAvailable]?.[i], availablePeople),
+      personTaking:    resolveRef(data[CONFIG.bookingCols.personTaking]?.[i],    people),
+      period:          String((data[CONFIG.bookingCols.period] || [])[i] ?? ''),
+    })).filter(b => b.date && b.period);
+  } catch (e) { console.error('fetchBookings:', e); }
+}
+
+/**
+ * Resolve a Grist Reference value (row ID integer) to a display name.
+ * Falls back to the raw value if no match found.
+ * @param {number|string} refId
+ * @param {{ id: number, name: string }[]} list
+ */
+function resolveRef(refId, list) {
+  if (!refId) return '';
+  const match = list.find(r => r.id === refId);
+  return match ? match.name : String(refId);
+}
+
 async function fetchAvailablePeople() {
   try {
     const data = await grist.docApi.fetchTable(CONFIG.tables.availablePeople);
@@ -430,11 +541,14 @@ async function fetchAvailablePeople() {
 
 async function loadData(silent = false) {
   try {
+    // fetchBookings depends on people + availablePeople for ref resolution,
+    // so fetch those first, then bookings in a second pass.
     const [calData] = await Promise.all([
       grist.docApi.fetchTable(CONFIG.tables.calendar),
       fetchPeople(),
       fetchAvailablePeople(),
     ]);
+    await fetchBookings();
     events = normaliseRecords(calData);
     updateCalendarEvents();
   } catch (err) {
