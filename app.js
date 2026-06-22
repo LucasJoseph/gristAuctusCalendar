@@ -233,6 +233,11 @@ function updateCalendarEvents() {
     const ed = parseEventDate(ev._date);
     if (!ed || !st) return null;
 
+    // Hide events that have nothing to show (no available places, no bookings)
+    const available = parseAvailablePlaces(ev._text);
+    const taken     = getBookingsForEvent(ev);
+    if (available.length === 0 && taken.length === 0) return null;
+
     const pad     = n => String(n).padStart(2, '0');
     const dateStr = `${ed.getFullYear()}-${pad(ed.getMonth()+1)}-${pad(ed.getDate())}`;
     const start   = `${dateStr}T${st.str}:00`;
@@ -509,7 +514,7 @@ function normaliseRecords(data) {
     _text:  String((data[CONFIG.calendarCols.text]  || [])[i] ?? ''),
     _start: (data[CONFIG.calendarCols.start] || [])[i] ?? null,
     _end:   (data[CONFIG.calendarCols.end]   || [])[i] ?? null,
-  })).filter(e => e._date !== null); // keep all events; empty _text = all spots taken
+  })).filter(e => e._date !== null);
 }
 
 /** Build {id, name}[] from a Grist table (for Reference column writes) */
